@@ -351,6 +351,9 @@ choice
 	config DEFAULT_FQ_CODEL
 		bool "Fair Queue Controlled Delay" if NET_SCH_FQ_CODEL
 
+	config DEFAULT_CAKE
+		bool "Common Applications Kept Enhanced" if NET_SCH_CAKE
+
 	config DEFAULT_SFQ
 		bool "Stochastic Fair Queue" if NET_SCH_SFQ
 
@@ -362,9 +365,10 @@ config DEFAULT_NET_SCH
 	string
 	default "pfifo_fast" if DEFAULT_PFIFO_FAST
 	default "fq" if DEFAULT_FQ
+	default "codel" if DEFAULT_CODEL
 	default "fq_codel" if DEFAULT_FQ_CODEL
+	default "cake" if DEFAULT_CAKE
 	default "sfq" if DEFAULT_SFQ
-	default "pfifo_fast"
 endif
 
 comment "Classification"
