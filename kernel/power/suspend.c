@@ -36,6 +36,9 @@
 #include "power.h"
 #include <soc/qcom/boot_stats.h>
 
+#undef trace_suspend_resume
+#define trace_suspend_resume(x, ...)
+
 const char * const pm_labels[] = {
 	[PM_SUSPEND_TO_IDLE] = "freeze",
 	[PM_SUSPEND_STANDBY] = "standby",
@@ -682,6 +685,7 @@ static int enter_state(suspend_state_t state)
 	sys_sync();
 	pr_cont("done.\n");
 #endif
+	sys_sync();
 	trace_suspend_resume(TPS("sync_filesystems"), 0, false);
 #endif
 
@@ -701,14 +705,12 @@ static int enter_state(suspend_state_t state)
 		goto Finish;
 
 	trace_suspend_resume(TPS("suspend_enter"), state, false);
-	pm_pr_dbg("Suspending system (%s)\n", mem_sleep_labels[state]);
 	pm_restrict_gfp_mask();
 	error = suspend_devices_and_enter(state);
 	pm_restore_gfp_mask();
 
  Finish:
 	events_check_enabled = false;
-	pm_pr_dbg("Finishing wakeup.\n");
 	suspend_finish();
  Unlock:
 	mutex_unlock(&pm_mutex);
@@ -754,6 +756,7 @@ int pm_suspend(suspend_state_t state)
 #endif
 	pm_suspend_marker("entry");
 	pr_info("suspend entry (%s)\n", mem_sleep_labels[state]);
+
 	error = enter_state(state);
 	if (error) {
 		suspend_stats.fail++;
