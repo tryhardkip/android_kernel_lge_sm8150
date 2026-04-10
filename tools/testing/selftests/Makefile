@@ -5,6 +5,7 @@ TARGETS += capabilities
 TARGETS += clone3
 TARGETS += cpufreq
 TARGETS += cpu-hotplug
+TARGETS += drivers/ntsync
 TARGETS += efivarfs
 TARGETS += exec
 TARGETS += firmware
