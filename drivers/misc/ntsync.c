@@ -23,6 +23,17 @@
 #include <linux/lockdep.h>
 #include <uapi/linux/ntsync.h>
 
+#ifndef array_size
+#define array_size(a, b) ({					\
+	size_t _a = (a);					\
+	size_t _b = (b);					\
+	size_t _res;						\
+	if (check_mul_overflow(_a, _b, &_res))			\
+		_res = SIZE_MAX;				\
+	_res;							\
+})
+#endif
+
 #ifndef struct_size
 #define struct_size(p, member, count) \
 	(sizeof(*(p)) + (count) * sizeof(*(p)->member))
