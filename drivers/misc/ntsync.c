@@ -18,18 +18,26 @@
 #include <linux/sched/signal.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
+#include <linux/overflow.h>
 #include <linux/uaccess.h>
 #include <linux/compat.h>
 #include <linux/lockdep.h>
 #include <uapi/linux/ntsync.h>
 
 #ifndef array_size
+/**
+ * array_size() - Calculate size of 2-dimensional array.
+ * @a: dimension one
+ * @b: dimension two
+ *
+ * Returns: number of bytes needed or SIZE_MAX on overflow.
+ */
 #define array_size(a, b) ({					\
 	size_t _a = (a);					\
 	size_t _b = (b);					\
 	size_t _res;						\
-	if (check_mul_overflow(_a, _b, &_res))			\
-		_res = SIZE_MAX;				\
+	if (__builtin_mul_overflow(_a, _b, &_res))		\
+		_res = (size_t)-1;				\
 	_res;							\
 })
 #endif
