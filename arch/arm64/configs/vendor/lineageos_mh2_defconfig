@@ -1,3 +1,7 @@
+#wireguard
+CONFIG_WIREGUARD=y
+# CONFIG_WIREGUARD_DEBUG is not set
+
 #oplus
 CONFIG_OPLUS_MM_HACKS=y
 
