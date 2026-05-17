@@ -457,6 +457,13 @@ config THP_SWAP
 config	TRANSPARENT_HUGE_PAGECACHE
 	def_bool y
 	depends on TRANSPARENT_HUGEPAGE
+	
+config LE9UO
+	bool "Enable le9uo Working Set Protection by default"
+	default n
+	help
+	  Say Y here to enable the le9 / le9uo memory protection patch 
+	  automatically at boot time without needing a sysctl command.
 
 config ANON_MIN_RATIO
 	int "Default value for vm.anon_min_ratio"
