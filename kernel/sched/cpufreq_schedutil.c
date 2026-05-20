@@ -184,9 +184,6 @@ static void sugov_update_commit(struct sugov_policy *sg_policy, u64 time,
 	}
 }
 
-
-
-#define TARGET_LOAD 80
 /**
  * get_next_freq - Compute a new frequency for a given cpufreq policy.
  * @sg_policy: schedutil policy object to compute the new frequency for.
@@ -216,7 +213,8 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 	unsigned int freq = arch_scale_freq_invariant() ?
 				policy->cpuinfo.max_freq : policy->cur;
 
-	freq = freq * util / max;
+	freq = (freq + (freq >> 2)) * util / max;
+	trace_sugov_next_freq(policy->cpu, util, max, freq);
 
 	if (freq == sg_policy->cached_raw_freq && sg_policy->next_freq != UINT_MAX)
 		return sg_policy->next_freq;
@@ -224,29 +222,7 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 	return cpufreq_driver_resolve_freq(policy, freq);
 }
 
-static inline unsigned long apply_dvfs_headroom(unsigned long util, int cpu)
-{
-	unsigned int sched_dvfs_headroom[8] = { [0 ... 7] = 1280 };
-	unsigned long capacity = capacity_orig_of(cpu);
-	unsigned long headroom;
-
-	if (util >= capacity)
-		return util;
-
-	/*
-	 * Taper the boosting at the top end as these are expensive and
-	 * we don't need that much of a big headroom as we approach max
-	 * capacity
-	 */
-	headroom = (capacity - util);
-	/* formula: headroom * (1.X - 1) == headroom * 0.X */
-	headroom = headroom *
-		(sched_dvfs_headroom[cpu] - SCHED_CAPACITY_SCALE) >> SCHED_CAPACITY_SHIFT;
-	return util + headroom;
-}
-
-static void sugov_get_util(unsigned long *util, unsigned long *max, int cpu,
-			   u64 time)
+static void sugov_get_util(unsigned long *util, unsigned long *max, int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
 	unsigned long cfs_max;
@@ -258,17 +234,6 @@ static void sugov_get_util(unsigned long *util, unsigned long *max, int cpu,
 	*max = cfs_max;
 
 	*util = boosted_cpu_util(cpu, &loadcpu->walt_load);
-	*util = apply_dvfs_headroom(util, cpu);
-
-	if (likely(use_pelt())) {
-		sched_avg_update(rq);
-		delta = time - rq->age_stamp;
-		if (unlikely(delta < 0))
-			delta = 0;
-		rt = div64_u64(rq->rt_avg, sched_avg_period() + delta);
-		rt = (rt * max_cap) >> SCHED_CAPACITY_SHIFT;
-		*util = min(*util + rt, max_cap);
-	}
 }
 
 static void sugov_set_iowait_boost(struct sugov_cpu *sg_cpu, u64 time,
