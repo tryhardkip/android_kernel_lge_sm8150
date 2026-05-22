@@ -181,7 +181,10 @@
 			qcom,pmic-revid = <&pm8150b_revid>;
 
 			qcom,thermal-mitigation
-					= <3000000 1500000 1000000 500000>;
+					= <6000000 6000000 6000000 6000000>;
+					
+		    qcom,fastchg-current-ma = <6000>;
+            qcom,input-current-lim-ma = <6000>;
 
 			qcom,chg-term-src = <1>;
 			qcom,charger-temp-max = <800>;
@@ -385,6 +388,11 @@
 			qcom,pmic-revid = <&pm8150b_revid>;
 			qcom,pmic-pbs = <&pm8150b_pbs1>;
 			status = "okay";
+			
+			qcom,jeita-cool-threshold-pct = <150>;
+            qcom,jeita-warm-threshold-pct = <480>;
+            qcom,jeita-hot-threshold-pct = <480>;
+            qcom,jeita-fcc-reduction-pct = <0>;
 
 			qcom,fg-batt-soc@4000 {
 				status = "okay";
@@ -607,7 +615,7 @@
 
 		trips {
 			ibat_lvl0:ibat-lvl0 {
-				temperature = <4500>;
+				temperature = <6500>;
 				hysteresis = <200>;
 				type = "passive";
 			};
@@ -623,7 +631,7 @@
 
 		trips {
 			ibat_lvl1:ibat-lvl1 {
-				temperature = <5000>;
+				temperature = <7000>;
 				hysteresis = <200>;
 				type = "passive";
 			};
