@@ -756,13 +756,12 @@ KBUILD_CFLAGS   += -O3
 ifeq ($(cc-name),clang)
 # Enable hot cold split optimization
 KBUILD_CFLAGS	+= -mllvm -hot-cold-split=true
-# Enable MLGO optimizations for register allocation (Requires CFLAGS + LDFLAGS for LTO)
+# Enable MLGO optimizations for register allocation
 KBUILD_CFLAGS	+= -mllvm -regalloc-enable-advisor=release
 KBUILD_LDFLAGS	+= -mllvm -regalloc-enable-advisor=release
-# Enable MLGO optimization for function inlining (Requires CFLAGS)
-KBUILD_CFLAGS	+= -mllvm -enable-ml-inliner=release
-KBUILD_CFLAGS   += -mcpu=cortex-a76+crc+crypto -mtune=cortex-a76 -march=armv8.2-a+crc+crypto+lse+rdm+rcpc+dotprod -O3 -funroll-loops
-KBUILD_AFLAGS   += -mcpu=cortex-a76+crc+crypto -mtune=cortex-a76 -march=armv8.2-a+crc+crypto+lse+rdm+rcpc+dotprod -O3 -funroll-loops
+KBUILD_LDFLAGS	+= -mllvm -enable-ml-inliner=release
+KBUILD_CFLAGS += -mcpu=cortex-a76+crc+crypto -mtune=cortex-a76 -march=armv8.2-a+crc+crypto+lse+rdm+rcpc+dotprod -O3 -funroll-loops
+KBUILD_AFLAGS += -mcpu=cortex-a76+crc+crypto -mtune=cortex-a76 -march=armv8.2-a+crc+crypto+lse+rdm+rcpc+dotprod -O3 -funroll-loops
 endif
 endif
 
