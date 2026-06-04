@@ -480,38 +480,12 @@ static ssize_t up_delay_show(struct gov_attr_set *attr_set, char *buf)
 	return ret;
 }
 
-static ssize_t up_rate_limit_us_store(struct gov_attr_set *attr_set,
-				      const char *buf, size_t count)
-{
-	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
-	struct sugov_policy *sg_policy;
-	unsigned int rate_limit_us;
-    
-	if (task_is_booster(current))
-		return count;
-		
-	if (kstrtouint(buf, 10, &rate_limit_us))
-		return -EINVAL;
-
-	tunables->up_rate_limit_us = rate_limit_us;
-
-	list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook) {
-		sg_policy->up_rate_delay_ns = rate_limit_us * NSEC_PER_USEC;
-		update_min_rate_limit_ns(sg_policy);
-	}
-
-	return count;
-}
-
 static ssize_t down_rate_limit_us_store(struct gov_attr_set *attr_set,
 					const char *buf, size_t count)
 {
 	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
 	struct sugov_policy *sg_policy;
 	unsigned int rate_limit_us;
-    
-	if (task_is_booster(current))
-		return count;
 		
 	if (kstrtouint(buf, 10, &rate_limit_us))
 		return -EINVAL;
@@ -520,6 +494,26 @@ static ssize_t down_rate_limit_us_store(struct gov_attr_set *attr_set,
 
 	list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook) {
 		sg_policy->down_rate_delay_ns = rate_limit_us * NSEC_PER_USEC;
+		update_min_rate_limit_ns(sg_policy);
+	}
+
+	return count;
+}
+
+static ssize_t up_rate_limit_us_store(struct gov_attr_set *attr_set,
+				      const char *buf, size_t count)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+	struct sugov_policy *sg_policy;
+	unsigned int rate_limit_us;
+		
+	if (kstrtouint(buf, 10, &rate_limit_us))
+		return -EINVAL;
+
+	tunables->up_rate_limit_us = rate_limit_us;
+
+	list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook) {
+		sg_policy->up_rate_delay_ns = rate_limit_us * NSEC_PER_USEC;
 		update_min_rate_limit_ns(sg_policy);
 	}
 
