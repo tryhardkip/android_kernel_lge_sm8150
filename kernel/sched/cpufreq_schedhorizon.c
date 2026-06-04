@@ -754,31 +754,38 @@ static int sugov_init(struct cpufreq_policy *policy)
 	tunables->up_rate_limit_us = cpufreq_policy_transition_delay_us(policy);
 	tunables->down_rate_limit_us = cpufreq_policy_transition_delay_us(policy);
 		
-	if (cpumask_test_cpu(policy->cpu, cpu_perf_mask)) {
+	/* Target Snapdragon 855 Hardware Cluster layouts directly */
+	if (policy->cpu == 7) {
+		/* PRIME GOLD CORE (Core 7 - policy7) */
 		tunables->up_rate_limit_us = CONFIG_SCHEDHORIZON_DEFAULT_UP_RATE_LIMIT_HP;
 		tunables->down_rate_limit_us = CONFIG_SCHEDHORIZON_DEFAULT_DOWN_RATE_LIMIT_HP;
-	}
-        	
-	if (cpumask_test_cpu(policy->cpu, cpu_lp_mask)) {
-		tunables->up_rate_limit_us = CONFIG_SCHEDHORIZON_DEFAULT_UP_RATE_LIMIT_LP;
-		tunables->down_rate_limit_us = CONFIG_SCHEDHORIZON_DEFAULT_DOWN_RATE_LIMIT_LP;
-	}
-	
-	if (cpumask_test_cpu(sg_policy->policy->cpu, cpu_lp_mask)) {
-		tunables->efficient_freq = default_efficient_freq_lp;
-		tunables->nefficient_freq = ARRAY_SIZE(default_efficient_freq_lp);
-		tunables->up_delay = default_up_delay_lp;
-		tunables->nup_delay = ARRAY_SIZE(default_up_delay_lp);
-	} else if (cpumask_test_cpu(sg_policy->policy->cpu, cpu_perf_mask)) {
 		tunables->efficient_freq = default_efficient_freq_perf;
 		tunables->nefficient_freq = ARRAY_SIZE(default_efficient_freq_perf);
 		tunables->up_delay = default_up_delay_perf;
 		tunables->nup_delay = ARRAY_SIZE(default_up_delay_perf);
+	} else if (policy->cpu >= 4) {
+		/* BIG CORES (Cores 4-6 - policy4) */
+		tunables->up_rate_limit_us = CONFIG_SCHEDHORIZON_DEFAULT_UP_RATE_LIMIT_HP;
+		tunables->down_rate_limit_us = CONFIG_SCHEDHORIZON_DEFAULT_DOWN_RATE_LIMIT_HP;
+		tunables->efficient_freq = default_efficient_freq_perf;
+		tunables->nefficient_freq = ARRAY_SIZE(default_efficient_freq_perf);
+		tunables->up_delay = default_up_delay_perf;
+		tunables->nup_delay = ARRAY_SIZE(default_up_delay_perf);
+	} else {
+		/* LITTLE CORES (Cores 0-3 - policy0) */
+		tunables->up_rate_limit_us = CONFIG_SCHEDHORIZON_DEFAULT_UP_RATE_LIMIT_LP;
+		tunables->down_rate_limit_us = CONFIG_SCHEDHORIZON_DEFAULT_DOWN_RATE_LIMIT_LP;
+		tunables->efficient_freq = default_efficient_freq_lp;
+		tunables->nefficient_freq = ARRAY_SIZE(default_efficient_freq_lp);
+		tunables->up_delay = default_up_delay_lp;
+		tunables->nup_delay = ARRAY_SIZE(default_up_delay_lp);
 	}
 
 	policy->governor_data = sg_policy;
 	sg_policy->tunables = tunables;
-	stale_ns = sched_ravg_window + (sched_ravg_window >> 3);
+	
+	/* Corrected to target global sysctl symbol lookup */
+	stale_ns = sysctl_sched_ravg_window + (sysctl_sched_ravg_window >> 3);
 
 	sugov_tunables_restore(policy);
 
@@ -929,4 +936,3 @@ module_exit(cpufreq_schedhorizon_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Schedhorizon CPUfreq governor");
 MODULE_AUTHOR("Xtrakari");
-
