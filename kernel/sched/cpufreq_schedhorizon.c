@@ -8,10 +8,11 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Base From schedutil cpufreq_govenor  
+ * Base From schedutil cpufreq_governor  
  *
  * Backported By DenomSly For k4.14 Redmi Note 10 Pro 
  * Enhanced with UCLAMP, PELT fallback, and BORE structural alignment
+ * Fixed SM8150 Hardware Cluster Policy Routing By Xtrakari
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -121,7 +122,7 @@ static int match_nearest_efficient_step(int freq, int maxstep, int *freq_table)
 
 static void do_freq_limit(struct sugov_policy *sg_policy, unsigned int *freq)
 {
-    int i;
+	int i;
 
 	if (!sg_policy->tunables->efficient_freq || !sg_policy->tunables->nefficient_freq)
 		return;
@@ -751,20 +752,17 @@ static int sugov_init(struct cpufreq_policy *policy)
 		goto stop_kthread;
 	}
     
-	tunables->up_rate_limit_us = cpufreq_policy_transition_delay_us(policy);
-	tunables->down_rate_limit_us = cpufreq_policy_transition_delay_us(policy);
-		
-	/* Target Snapdragon 855 Hardware Cluster layouts directly */
+	/* --- SM8150 HARDWARE POLICY CLUSTER DEFINITIONS --- */
 	if (policy->cpu == 7) {
-		/* PRIME GOLD CORE (Core 7 - policy7) */
+		/* PRIME GOLD CORE (Policy 7) */
 		tunables->up_rate_limit_us = CONFIG_SCHEDHORIZON_DEFAULT_UP_RATE_LIMIT_HP;
 		tunables->down_rate_limit_us = CONFIG_SCHEDHORIZON_DEFAULT_DOWN_RATE_LIMIT_HP;
 		tunables->efficient_freq = default_efficient_freq_perf;
 		tunables->nefficient_freq = ARRAY_SIZE(default_efficient_freq_perf);
 		tunables->up_delay = default_up_delay_perf;
 		tunables->nup_delay = ARRAY_SIZE(default_up_delay_perf);
-	} else if (policy->cpu >= 4) {
-		/* BIG CORES (Cores 4-6 - policy4) */
+	} else if (policy->cpu == 4) {
+		/* BIG CORES (Policy 4 - Covers Cores 4, 5, 6) */
 		tunables->up_rate_limit_us = CONFIG_SCHEDHORIZON_DEFAULT_UP_RATE_LIMIT_HP;
 		tunables->down_rate_limit_us = CONFIG_SCHEDHORIZON_DEFAULT_DOWN_RATE_LIMIT_HP;
 		tunables->efficient_freq = default_efficient_freq_perf;
@@ -772,7 +770,7 @@ static int sugov_init(struct cpufreq_policy *policy)
 		tunables->up_delay = default_up_delay_perf;
 		tunables->nup_delay = ARRAY_SIZE(default_up_delay_perf);
 	} else {
-		/* LITTLE CORES (Cores 0-3 - policy0) */
+		/* LITTLE CORES (Policy 0 - Covers Cores 0, 1, 2, 3) */
 		tunables->up_rate_limit_us = CONFIG_SCHEDHORIZON_DEFAULT_UP_RATE_LIMIT_LP;
 		tunables->down_rate_limit_us = CONFIG_SCHEDHORIZON_DEFAULT_DOWN_RATE_LIMIT_LP;
 		tunables->efficient_freq = default_efficient_freq_lp;
@@ -780,12 +778,11 @@ static int sugov_init(struct cpufreq_policy *policy)
 		tunables->up_delay = default_up_delay_lp;
 		tunables->nup_delay = ARRAY_SIZE(default_up_delay_lp);
 	}
+	/* --- END SM8150 POLICY CLUSTER DEFINITIONS --- */
 
 	policy->governor_data = sg_policy;
 	sg_policy->tunables = tunables;
-	
-	/* Corrected to target global sysctl symbol lookup */
-	stale_ns = sysctl_sched_ravg_window + (sysctl_sched_ravg_window >> 3);
+	stale_ns = sched_ravg_window + (sched_ravg_window >> 3);
 
 	sugov_tunables_restore(policy);
 
