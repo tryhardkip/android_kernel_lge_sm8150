@@ -326,7 +326,7 @@ config SCHEDHORIZON_DEFAULT_EFFICIENT_FREQ_HP
 
 config SCHEDHORIZON_DEFAULT_UP_DELAY_LP
 	int "Default multiplicand of the up delay for the lp cluster"
-	default "16"
+	default 16
 	help
 	  This sets schedhorizon's default up delay for the lp cluster where
 	  the default value acts as a multiplicand which is to be multiplied
@@ -334,7 +334,7 @@ config SCHEDHORIZON_DEFAULT_UP_DELAY_LP
 
 config SCHEDHORIZON_DEFAULT_UP_DELAY_HP
 	int "Default multiplicand of the up delay for the hp cluster"
-	default "20"
+	default 20
 	help
 	  This sets schedhorizon's default up delay for the hp cluster where
 	  the default value acts as a multiplicand which is to be multiplied
