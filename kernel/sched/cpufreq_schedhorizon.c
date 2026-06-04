@@ -919,4 +919,20 @@ struct cpufreq_governor *cpufreq_default_governor(void)
 }
 #endif
 
-cpufreq_governor_init(schedhorizon_gov);
+static int __init cpufreq_schedhorizon_init(void)
+{
+	return cpufreq_register_governor(&schedhorizon_gov);
+}
+
+static void __exit cpufreq_schedhorizon_exit(void)
+{
+	cpufreq_unregister_governor(&schedhorizon_gov);
+}
+
+module_init(cpufreq_schedhorizon_init);
+module_exit(cpufreq_schedhorizon_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Schedhorizon CPUfreq governor");
+MODULE_AUTHOR("Xtrakari");
+
