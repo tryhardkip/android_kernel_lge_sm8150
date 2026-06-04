@@ -29,12 +29,37 @@
 #define SUGOV_KTHREAD_PRIORITY	50
 
 /* Define default efficient frequencies for big and LITTLE cores */
-static unsigned int default_efficient_freq_lp[] = {CONFIG_SCHEDHORIZON_DEFAULT_EFFICIENT_FREQ_LP};
-static unsigned int default_efficient_freq_perf[] = {CONFIG_SCHEDHORIZON_DEFAULT_EFFICIENT_FREQ_HP};
+static unsigned int default_efficient_freq_lp[] = {
+#ifdef CONFIG_SCHEDHORIZON_DEFAULT_EFFICIENT_FREQ_LP
+	576000, 1017600, 1516800
+#else
+	0
+#endif
+};
 
-/* Define default up delays for big and LITTLE cores */
-static unsigned int default_up_delay_lp[] = {CONFIG_SCHEDHORIZON_DEFAULT_UP_DELAY_LP};
-static unsigned int default_up_delay_perf[] = {CONFIG_SCHEDHORIZON_DEFAULT_UP_DELAY_HP};
+static unsigned int default_up_delay_lp[] = {
+#ifdef CONFIG_SCHEDHORIZON_DEFAULT_UP_DELAY_LP
+	32, 32, 0
+#else
+	16, 16, 0
+#endif
+};
+
+static unsigned int default_efficient_freq_perf[] = {
+#ifdef CONFIG_SCHEDHORIZON_DEFAULT_EFFICIENT_FREQ_HP
+	1209600, 1804800, 2419200, 2841600
+#else
+	0
+#endif
+};
+
+static unsigned int default_up_delay_perf[] = {
+#ifdef CONFIG_SCHEDHORIZON_DEFAULT_UP_DELAY_HP
+	16, 16, 16, 0
+#else
+	20, 20, 20, 0
+#endif
+};
 
 struct sugov_tunables {
 	struct gov_attr_set attr_set;
