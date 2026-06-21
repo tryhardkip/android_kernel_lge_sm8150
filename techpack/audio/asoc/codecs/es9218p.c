@@ -3044,7 +3044,7 @@ static int es9218_sabre_wcdon2bypass_put(struct snd_kcontrol *kcontrol,
 
     pr_err("%s(): entry wcd on : %d \n ", __func__ , ret);
 
-        if(ret == 0) {
+    if(ret == 0) {
 #ifdef CONFIG_SND_SOC_HSDET_L_SWITCH
         if(es9218_start && !g_es9218_priv->es9218_data->ess_hifi_exception) {
 #else
@@ -3055,14 +3055,7 @@ static int es9218_sabre_wcdon2bypass_put(struct snd_kcontrol *kcontrol,
             es9218_is_amp_on = 1;
             pr_info("%s() : state = %s : WCD On State ByPass -> HiFi !!\n", __func__, power_state[es9218_power_state]);
         } else {
-            /* Fix: Force a transition out of the boot-stuck bypass state if headphones are in */
-            if (__es9218_sabre_headphone_on() == 0) {
-                es9218p_sabre_bypass2hifi();
-                es9218_is_amp_on = 1;
-                pr_info("%s() : Boot bypass forced state change to HiFi !!\n", __func__);
-            } else {
-                pr_info("%s() : state = %s : don't change\n", __func__, power_state[es9218_power_state]);
-            }
+            pr_info("%s() : state = %s : don't change\n", __func__, power_state[es9218_power_state]);
         }
     } else {
         if ( es9218_power_state > ESS_PS_BYPASS ) {
