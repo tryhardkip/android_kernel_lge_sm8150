@@ -1556,7 +1556,6 @@ static const struct attribute *pwrctrl_attr_list[] = {
 	&dev_attr_force_rail_on.attr,
 	&dev_attr_force_no_nap.attr,
 	&dev_attr_bus_split.attr,
-	&dev_attr_default_pwrlevel.attr,
 	&dev_attr_gpu_model.attr,
 	&dev_attr_gpu_busy_percentage.attr,
 	&dev_attr_min_clock_mhz.attr,
