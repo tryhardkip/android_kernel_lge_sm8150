@@ -378,7 +378,7 @@ static void bbr_set_pacing_rate(struct sock *sk, u32 bw, int gain)
 }
 
 /* Return count of segments we want in the skbs we send, or 0 for default. */
-static u32 bbr_tso_segs_goal(struct sock *sk)
+static u32 __maybe_unused bbr_tso_segs_goal(struct sock *sk)
 {
     struct bbr *bbr = inet_csk_ca(sk);
 
@@ -1160,7 +1160,6 @@ static struct tcp_congestion_ops tcp_bbr_cong_ops __read_mostly = {
     .undo_cwnd  = bbr_undo_cwnd,
     .cwnd_event = bbr_cwnd_event,
     .ssthresh   = bbr_ssthresh,
-    .tso_segs_goal  = bbr_tso_segs_goal,
     .get_info   = bbr_get_info,
     .set_state  = bbr_set_state,
 };
