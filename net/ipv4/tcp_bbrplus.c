@@ -385,6 +385,19 @@ static u32 __maybe_unused bbr_tso_segs_goal(struct sock *sk)
     return bbr->tso_segs_goal;
 }
 
+/* Helper to calculate TSO auto-size locally when tcp_tso_autosize is unexported */
+static u32 bbr_tcp_tso_autosize(const struct sock *sk, unsigned int mss_now,
+				int min_tso_segs)
+{
+	u32 bytes, segs;
+
+	bytes = min_t(u64, sk->sk_pacing_rate >> 10,
+		      sk->sk_gso_max_size - 1 - MAX_TCP_HEADER);
+	segs = max_t(u32, bytes / mss_now, min_tso_segs);
+
+	return segs;
+}
+
 static void bbr_set_tso_segs_goal(struct sock *sk)
 {
     struct tcp_sock *tp = tcp_sk(sk);
@@ -392,7 +405,7 @@ static void bbr_set_tso_segs_goal(struct sock *sk)
     u32 min_segs;
 
     min_segs = sk->sk_pacing_rate < (bbr_min_tso_rate >> 3) ? 1 : 2;
-    bbr->tso_segs_goal = min(tcp_tso_autosize(sk, tp->mss_cache, min_segs),
+    bbr->tso_segs_goal = min(bbr_tcp_tso_autosize(sk, tp->mss_cache, min_segs),
                  0x7FU);
 }
 
