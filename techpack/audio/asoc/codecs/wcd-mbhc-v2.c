@@ -2301,6 +2301,21 @@ int wcd_mbhc_start(struct wcd_mbhc *mbhc, struct wcd_mbhc_config *mbhc_cfg)
 			wcd_mbhc_usb_c_analog_deinit(mbhc);
 			goto err;
 		}
+		/*
+		 * Detection circuitry was just enabled above. If a jack is
+		 * already mechanically inserted (e.g. across a reboot), the
+		 * detect line is already at its "inserted" level and no
+		 * edge will occur to fire the switch IRQ. Do one manual
+		 * check here, mirroring wcd_mbhc_mech_plug_detect_irq(), so
+		 * an already-present jack is still detected.
+		 */
+		if (mbhc->mbhc_cb->lock_sleep(mbhc, true)) {
+			wcd_mbhc_swch_irq_handler(mbhc);
+			mbhc->mbhc_cb->lock_sleep(mbhc, false);
+		} else {
+			pr_warn("%s: failed to hold suspend for initial jack check\n",
+				__func__);
+		}
 	} else {
 		if (!mbhc->mbhc_fw || !mbhc->mbhc_cal)
 			schedule_delayed_work(&mbhc->mbhc_firmware_dwork,
