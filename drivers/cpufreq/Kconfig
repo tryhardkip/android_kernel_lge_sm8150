@@ -387,6 +387,17 @@ config SCHEDHORIZON_DEFAULT_UP_DELAY_HP
 	  Values act as multiplicands multiplied by NSEC_PER_MSEC.
 endif
 	  
+config CPU_FREQ_GOV_VORPAL
+	tristate "'vorpal' cpufreq policy governor"
+	default m
+	depends on CPU_FREQ && SMP && CPU_FREQ_GOV_SCHEDUTIL
+	select CPU_FREQ_GOV_ATTR_SET
+	select IRQ_WORK
+	help
+	 Vorpal CPUFreq Governor, adapted for Linux 4.14
+	 Combines interactive hispeed ramp-up with PELT tracking.
+	 Module: cpufreq_vorpal. If in doubt, say M.
+
 comment "CPU frequency scaling drivers"
 
 config CPUFREQ_DT
