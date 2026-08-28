@@ -1,3 +1,7 @@
+#Cambyses
+CONFIG_SCHED_DEBUG=y
+CONFIG_JUMP_LABEL=y
+
 #nomount
 CONFIG_NOMOUNT=y
 
