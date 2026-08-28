@@ -1,9 +1,6 @@
 #nomount
 CONFIG_NOMOUNT=y
 
-#bore
-CONFIG_SCHED_BORE=y
-
 CONFIG_LOCALVERSION="-perf-extended"
 # CONFIG_LOCALVERSION_AUTO is not set
 # CONFIG_FHANDLE is not set
