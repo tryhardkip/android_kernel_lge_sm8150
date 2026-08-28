@@ -65,6 +65,18 @@ config DEFAULT_IOSCHED
 	default "cfq" if DEFAULT_CFQ
 	default "noop" if DEFAULT_NOOP
 
+config MQ_IOSCHED_NONE
+	bool
+	default y
+	---help---
+	  The no-op I/O scheduler for the blk-mq (multi-queue) block layer.
+	  It performs no additional request reordering or merging beyond
+	  what the block layer itself provides — requests are dispatched
+	  essentially in FIFO order. Best suited for devices that manage
+	  their own internal command queuing/scheduling, such as UFS and
+	  NVMe storage, where an extra software scheduling layer only adds
+	  overhead.
+
 config MQ_IOSCHED_DEADLINE
 	tristate "MQ deadline I/O scheduler"
 	default y
