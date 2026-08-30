@@ -1123,40 +1123,6 @@ static ssize_t polling_interval_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(polling_interval);
 
-#define KGSL_MIN_FREQ_FLOOR_HZ	150000000UL	/* 150MHz */
-#define KGSL_MAX_FREQ_CEIL_HZ	805000000UL	/* 805MHz */
-
-static bool devfreq_is_kgsl(struct devfreq *df)
-{
-	return df->dev.parent &&
-		!strncmp(dev_name(df->dev.parent), "kgsl-3d0", 8);
-}
-
-static unsigned long devfreq_nearest_available(struct devfreq *df,
-						unsigned long target)
-{
-	struct devfreq_dev_profile *profile = df->profile;
-	unsigned long best = target;
-	unsigned long best_diff = ~0UL;
-	int i;
-
-	if (!profile->freq_table || profile->max_state == 0)
-		return target;
-
-	for (i = 0; i < profile->max_state; i++) {
-		unsigned long freq = profile->freq_table[i];
-		unsigned long diff = (freq > target) ?
-					(freq - target) : (target - freq);
-
-		if (diff < best_diff) {
-			best_diff = diff;
-			best = freq;
-		}
-	}
-
-	return best;
-}
-
 static ssize_t min_freq_store(struct device *dev, struct device_attribute *attr,
 			      const char *buf, size_t count)
 {
@@ -1168,9 +1134,6 @@ static ssize_t min_freq_store(struct device *dev, struct device_attribute *attr,
 	ret = sscanf(buf, "%lu", &value);
 	if (ret != 1)
 		return -EINVAL;
-
-	if (devfreq_is_kgsl(df) && value < KGSL_MIN_FREQ_FLOOR_HZ)
-		value = devfreq_nearest_available(df, KGSL_MIN_FREQ_FLOOR_HZ);
 
 	mutex_lock(&df->event_lock);
 	mutex_lock(&df->lock);
@@ -1200,9 +1163,6 @@ static ssize_t max_freq_store(struct device *dev, struct device_attribute *attr,
 	ret = sscanf(buf, "%lu", &value);
 	if (ret != 1)
 		return -EINVAL;
-
-	if (devfreq_is_kgsl(df) && value > KGSL_MAX_FREQ_CEIL_HZ)
-		value = devfreq_nearest_available(df, KGSL_MAX_FREQ_CEIL_HZ);
 
 	mutex_lock(&df->event_lock);
 	mutex_lock(&df->lock);
