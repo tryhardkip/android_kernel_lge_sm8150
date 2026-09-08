@@ -32,6 +32,7 @@ obj-$(CONFIG_CPU_FREQ) += cpufreq.o
 obj-$(CONFIG_CPU_FREQ_GOV_SCHEDUTIL) += cpufreq_schedutil.o
 obj-$(CONFIG_CPU_FREQ_GOV_SCHEDHORIZON) += cpufreq_schedhorizon.o
 obj-$(CONFIG_CPU_FREQ_GOV_REFLEX) += cpufreq_reflex.o
+obj-$(CONFIG_CPU_FREQ_GOV_VORPAL) += cpufreq_vorpal.o
 obj-$(CONFIG_MEMBARRIER) += membarrier.o
 obj-$(CONFIG_SCHED_CORE_CTL) += core_ctl.o
 obj-$(CONFIG_PSI) += psi.o
