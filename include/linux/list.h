@@ -268,13 +268,11 @@ static inline void list_rotate_to_front(struct list_head *list,
 					struct list_head *head)
 {
 	/*
-	 * Defer the actual rotation to the caller, so we don't
-	 * live-lock forever.
+	 * Deletes the list head from the list and places it as the
+	 * tail of @list, which rotates the list so that @list is at
+	 * the front.
 	 */
-	if (list == head || list_is_singular(head))
-		return;
-
-	list_move(list, head);
+	list_move_tail(head, list);
 }
 
 static inline void __list_cut_position(struct list_head *list,
