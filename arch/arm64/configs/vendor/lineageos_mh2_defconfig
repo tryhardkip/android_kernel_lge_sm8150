@@ -1,3 +1,6 @@
+# wakelock driver
+CONFIG_WAKELOCK_GOVERNOR=y
+
 CONFIG_LOCALVERSION="-perf"
 # CONFIG_LOCALVERSION_AUTO is not set
 # CONFIG_FHANDLE is not set
