@@ -1,3 +1,6 @@
+# mglru
+CONFIG_LRU_GEN=y
+
 # wakelock driver
 CONFIG_WAKELOCK_GOVERNOR=y
 
