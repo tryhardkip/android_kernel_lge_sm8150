@@ -681,8 +681,18 @@ static unsigned int rfx_target_freq(struct rfx_policy *p, unsigned long util,
 	util = rfx_apply_headroom(util, max_cap, gaming, little);
 
 	/* arch capacity 1024 is defined against cpuinfo max; only the
-	 * percentage shape uses fmax. */
-	freq = (unsigned int)((u64)pol->cpuinfo.max_freq * util / max_cap);
+	 * percentage shape uses fmax. Gaming keeps the original linear
+	 * response (matches the bounded-slew/floor math it was tuned
+	 * against); daily uses a sqrt curve so moderate load (PiP,
+	 * scrolling, light UI work) requests proportionally more
+	 * frequency instead of sitting under-clocked until a sustained
+	 * cap-lift latch trips. */
+	if (gaming)
+		freq = (unsigned int)((u64)pol->cpuinfo.max_freq * util / max_cap);
+	else
+		freq = (unsigned int)(((u64)pol->cpuinfo.max_freq +
+				       (pol->cpuinfo.max_freq >> 2)) *
+				      int_sqrt(util * 100 / max_cap) / 10);
 	freq = clamp(freq, fmin, fceil);
 
 	if (gaming) {
