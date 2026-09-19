@@ -95,19 +95,19 @@
 /* ---- Daily shaping, percent of the effective ceiling. Caps only: the util
  * EMA plus PELT already carry any rise a window or burst floor covered. ---- */
 /* Little daily cap: just above the V/f knee. */
-#define RFX_D_LITTLE_CAP_PCT		85
+#define RFX_D_LITTLE_CAP_PCT		65
 /* Sustained caps: long foreground/background work at lower voltage. */
-#define RFX_D_LITTLE_SUSTAINED_CAP_PCT	90
+#define RFX_D_LITTLE_SUSTAINED_CAP_PCT	80
 /* Sustained latches, skewed 1.25x (real demand on at ~58%, off at ~44%). */
-#define RFX_D_LITTLE_LIFT_PCT		50
-#define RFX_D_LITTLE_DROP_PCT		35
+#define RFX_D_LITTLE_LIFT_PCT		72
+#define RFX_D_LITTLE_DROP_PCT		55
 /* Big/Prime share one latch; a sustained cap may never exceed 100. */
-#define RFX_D_BIG_CAP_PCT		90
-#define RFX_D_PRIME_CAP_PCT		85
-#define RFX_D_BIG_LIFT_PCT		55
-#define RFX_D_BIG_DROP_PCT		40
-#define RFX_D_BIG_SUSTAINED_CAP_PCT	95
-#define RFX_D_PRIME_SUSTAINED_CAP_PCT	90
+#define RFX_D_BIG_CAP_PCT		70
+#define RFX_D_PRIME_CAP_PCT		68
+#define RFX_D_BIG_LIFT_PCT		80
+#define RFX_D_BIG_DROP_PCT		68
+#define RFX_D_BIG_SUSTAINED_CAP_PCT	80
+#define RFX_D_PRIME_SUSTAINED_CAP_PCT	80
 
 /* ---- Util EMA: rise instant, decay time-normalised, so the time constant is
  * independent of eval rate. Period = interval removing 1/DIVISOR of the
