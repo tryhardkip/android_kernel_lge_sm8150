@@ -1119,7 +1119,7 @@ static void idtp9222_polling_log(struct work_struct* work) {
 	int idtfault = gpio_get_value(idtp9222->gpio_idtfault);
 	int detached = gpio_get_value(idtp9222->gpio_detached);
 	int disabled = get_effective_result_locked(idtp9222->wlc_disable);
-	pr_err("MSM_GPIO%d(<-OD2_N, idtfault):%d, "
+	dev_dbg(idtp9222->wlc_device, "MSM_GPIO%d(<-OD2_N, idtfault):%d, "
 		"MSM_GPIO%d(<-PDT_N, detached):%d, "
 		"PMI_GPIO%d(->OFF_P, disabled):%d\n",
 		idtp9222->gpio_idtfault, idtfault,
