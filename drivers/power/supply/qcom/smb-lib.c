@@ -3621,6 +3621,14 @@ void smblib_usb_plugin_hard_reset_locked(struct smb_charger *chg)
 		if (chg->fcc_stepper_enable)
 			vote(chg->fcc_votable, FCC_STEPPER_VOTER, false, 0);
 
+		/* Clear any pending weak charger votes on USB attach */
+		if (is_client_vote_enabled(chg->usb_icl_votable,
+						WEAK_CHARGER_VOTER)) {
+			pr_info("USB plugin hard reset - clearing weak charger vote\n");
+			vote(chg->usb_icl_votable, WEAK_CHARGER_VOTER, false, 0);
+			vote(chg->awake_votable, WEAK_CHARGER_VOTER, false, 0);
+		}
+
 		smblib_cc2_sink_removal_exit(chg);
 	} else {
 		/* Force 1500mA FCC on USB removal if fcc stepper is enabled */
@@ -3671,6 +3679,14 @@ void smblib_usb_plugin_locked(struct smb_charger *chg)
 		rc = smblib_request_dpdm(chg, true);
 		if (rc < 0)
 			smblib_err(chg, "Couldn't to enable DPDM rc=%d\n", rc);
+
+		/* Clear any pending weak charger votes on USB attach */
+		if (is_client_vote_enabled(chg->usb_icl_votable,
+						WEAK_CHARGER_VOTER)) {
+			pr_info("USB plugin detected - clearing weak charger vote\n");
+			vote(chg->usb_icl_votable, WEAK_CHARGER_VOTER, false, 0);
+			vote(chg->awake_votable, WEAK_CHARGER_VOTER, false, 0);
+		}
 
 		/* Remove FCC_STEPPER 1.5A init vote to allow FCC ramp up */
 		if (chg->fcc_stepper_enable)
@@ -4708,6 +4724,27 @@ static void smblib_bb_removal_work(struct work_struct *work)
 #define BOOST_BACK_UNVOTE_DELAY_MS		750
 #define BOOST_BACK_STORM_COUNT			3
 #define WEAK_CHG_STORM_COUNT			8
+
+/* Delay before automatically clearing weak charger vote to recover charging */
+#define WEAK_CHG_RECOVERY_DELAY_MS		30000
+
+static void smblib_weak_chg_recovery_work(struct work_struct *work)
+{
+	struct smb_charger *chg = container_of(work, struct smb_charger,
+						weak_chg_recovery_work.work);
+
+	/* Automatically clear weak charger vote to allow higher charging rates */
+	if (is_client_vote_enabled(chg->usb_icl_votable,
+					WEAK_CHARGER_VOTER)) {
+		pr_info("Weak charger vote timeout - clearing ICL restriction\n");
+		vote(chg->usb_icl_votable, WEAK_CHARGER_VOTER, false, 0);
+		vote(chg->awake_votable, WEAK_CHARGER_VOTER, false, 0);
+		/* Reset storm data and restore normal detection threshold */
+		update_storm_count(&chg->irq_info[SWITCH_POWER_OK_IRQ].storm_data,
+					WEAK_CHG_STORM_COUNT);
+	}
+}
+
 irqreturn_t smblib_handle_switcher_power_ok(int irq, void *data)
 {
 	struct smb_irq_data *irq_data = data;
@@ -4747,6 +4784,13 @@ irqreturn_t smblib_handle_switcher_power_ok(int irq, void *data)
 			 * to 3 for reverse boost detection.
 			 */
 			update_storm_count(wdata, BOOST_BACK_STORM_COUNT);
+			/*
+			 * Schedule automatic recovery after a delay to clear
+			 * weak charger vote if condition persists
+			 */
+			mod_delayed_work(system_wq,
+					&chg->weak_chg_recovery_work,
+					msecs_to_jiffies(WEAK_CHG_RECOVERY_DELAY_MS));
 		} else {
 			smblib_err(chg,
 				"Reverse boost detected: voting 0mA to suspend input\n");
@@ -5432,6 +5476,7 @@ int smblib_init(struct smb_charger *chg)
 	INIT_WORK(&chg->legacy_detection_work, smblib_legacy_detection_work);
 	INIT_DELAYED_WORK(&chg->uusb_otg_work, smblib_uusb_otg_work);
 	INIT_DELAYED_WORK(&chg->bb_removal_work, smblib_bb_removal_work);
+	INIT_DELAYED_WORK(&chg->weak_chg_recovery_work, smblib_weak_chg_recovery_work);
 	chg->fake_capacity = -EINVAL;
 	chg->fake_input_current_limited = -EINVAL;
 	chg->fake_batt_status = -EINVAL;
