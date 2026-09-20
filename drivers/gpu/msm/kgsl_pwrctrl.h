@@ -216,9 +216,6 @@ struct kgsl_pwrctrl {
 	struct kgsl_pwr_limit *sysfs_pwr_limit;
 	unsigned int gpu_bimc_int_clk_freq;
 	bool gpu_bimc_interface_enabled;
-
-	/* Flag to lock GPU frequency limits set via userspace (e.g., KernelTWEAKS) */
-	bool gpu_freq_locked;
 	const char *tzone_names[KGSL_MAX_TZONE_NAMES];
 	struct cx_ipeak_client *gpu_cx_ipeak;
 	unsigned int cx_ipeak_gpu_freq;
