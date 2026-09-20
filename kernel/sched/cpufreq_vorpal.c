@@ -139,14 +139,26 @@
 
 /* ---- Thermal emergency net. The vendor HAL (policy->max) is the real
  * controller on the MTK/QCOM boards this lands on; this is one hard latched
- * net for when that engine is absent. One trip, one release, 7C apart. ---- */
+ * net for when that engine is absent.
+ *
+ * Sync with SM8150 thermal zones:
+ *  - CPU thermal zones trip passive at 110C (step_wise governor)
+ *  - GPU/LMH zones trip at 85C
+ *  - Junction max (Tj max) for the application processor is ~110-115C
+ *
+ * We trigger the emergency net at 100C -- early enough to proactively shed
+ * load before hitting the kernel thermal framework's 110C hard trip, yet
+ * far enough above the GPU/VDD limits to avoid false positives under load.
+ * ---- */
 #define RFX_THERMAL_POLL_GAMING_MS	100
 #define RFX_THERMAL_POLL_IDLE_MS	2000	/* deferrable: free in deep sleep */
 #define RFX_THERMAL_POLL_WARM_MS	2000
-#define RFX_TEMP_WARM_MC		70000
-#define RFX_TEMP_EMERGENCY_MC		95000	/* junction; LMH acts far below */
-#define RFX_TEMP_EMERGENCY_CLEAR_MC	88000
-#define RFX_EMERGENCY_CAP_PCT		80
+#define RFX_THERMAL_POLL_WARNING_MS	200	/* warning zone: proactive sampling */
+#define RFX_THERMAL_POLL_EMERGENCY_MS	50	/* emergency: fast sampling */
+#define RFX_TEMP_WARM_MC		75000
+#define RFX_TEMP_EMERGENCY_MC		100000	/* before kernel thermal hard trip */
+#define RFX_TEMP_EMERGENCY_CLEAR_MC	92000
+#define RFX_EMERGENCY_CAP_PCT		75
 
 /* Warmup ramp: instant rise, linear decay back to the baseline floor. */
 #define RFX_WARMUP_RAMP_DOWN_MS	60
@@ -1406,8 +1418,9 @@ static void rfx_thermal_fn(struct work_struct *w)
 			have = true;
 	}
 
-	/* Latched net, 7C hysteresis: trip once, hold until the die cools,
-	 * release once. */
+	/* Latched net, 8C hysteresis: trip once, hold until the die cools,
+	 * release once. The emergency triggers before the kernel thermal
+	 * framework's 110C hard trip -- this governor proactively sheds load. */
 	if (have) {
 		if (atomic_read(&rfx_emergency_cap_pct) >= 100) {
 			if (t_mc >= RFX_TEMP_EMERGENCY_MC) {
@@ -1427,12 +1440,21 @@ static void rfx_thermal_fn(struct work_struct *w)
 		return;
 	}
 
-	if (rfx_gaming_enabled())
-		delay_ms = RFX_THERMAL_POLL_GAMING_MS;
-	else if (t_mc >= RFX_TEMP_WARM_MC)
+	/* Adaptive polling: ramp up frequency as we approach danger. */
+	if (rfx_gaming_enabled()) {
+		if (t_mc >= RFX_TEMP_EMERGENCY_CLEAR_MC)
+			delay_ms = RFX_THERMAL_POLL_EMERGENCY_MS;
+		else
+			delay_ms = RFX_THERMAL_POLL_GAMING_MS;
+	} else if (t_mc >= RFX_TEMP_EMERGENCY_MC) {
+		delay_ms = RFX_THERMAL_POLL_EMERGENCY_MS;
+	} else if (t_mc >= RFX_TEMP_EMERGENCY_CLEAR_MC) {
+		delay_ms = RFX_THERMAL_POLL_WARNING_MS;
+	} else if (t_mc >= RFX_TEMP_WARM_MC) {
 		delay_ms = RFX_THERMAL_POLL_WARM_MS;
-	else
+	} else {
 		delay_ms = RFX_THERMAL_POLL_IDLE_MS;
+	}
 	queue_delayed_work(system_power_efficient_wq, &rfx_thermal_work,
 			   msecs_to_jiffies(delay_ms));
 }
