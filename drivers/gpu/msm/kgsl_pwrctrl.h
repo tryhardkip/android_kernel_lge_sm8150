@@ -219,6 +219,9 @@ struct kgsl_pwrctrl {
 
 	/* Flag to lock GPU frequency limits set via userspace (e.g., KernelTWEAKS) */
 	bool gpu_freq_locked;
+	
+	/* Store user's preferred max pwrlevel to auto-restore if reset */
+	unsigned int gpu_freq_preference;
 	const char *tzone_names[KGSL_MAX_TZONE_NAMES];
 	struct cx_ipeak_client *gpu_cx_ipeak;
 	unsigned int cx_ipeak_gpu_freq;

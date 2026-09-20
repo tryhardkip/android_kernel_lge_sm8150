@@ -641,6 +641,10 @@ static int opp_notify(struct notifier_block *nb,
 			min_level = level;
 	}
 
+	/* If user has locked GPU frequency limits, restore preference if reset */
+	if (pwr->gpu_freq_locked && max_level == 0 && pwr->gpu_freq_preference > 0)
+		max_level = pwr->gpu_freq_preference;
+
 	pwr->thermal_pwrlevel = max_level;
 	pwr->thermal_pwrlevel_floor = min_level;
 
