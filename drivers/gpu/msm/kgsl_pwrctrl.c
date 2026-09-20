@@ -598,9 +598,12 @@ static ssize_t kgsl_pwrctrl_thermal_pwrlevel_store(struct device *dev,
 	if (level > pwr->num_pwrlevels - 2)
 		level = pwr->num_pwrlevels - 2;
 
-	/* If user has locked GPU frequency limits, restore preference if reset */
-	if (pwr->gpu_freq_locked && level == 0 && pwr->gpu_freq_preference > 0)
-		level = pwr->gpu_freq_preference;
+	/* If user has locked GPU frequency limits, prevent thermal overrides */
+	if (pwr->gpu_freq_locked) {
+		mutex_unlock(&device->mutex);
+		pr_debug("GPU frequency lock active - ignoring thermal pwrlevel change\n");
+		return count;
+	}
 
 	pwr->thermal_pwrlevel = level;
 
@@ -650,11 +653,6 @@ static ssize_t kgsl_pwrctrl_max_pwrlevel_store(struct device *dev,
 		level = pwr->min_pwrlevel;
 
 	pwr->max_pwrlevel = level;
-
-	/* Store user's preferred max pwrlevel and auto-lock to prevent reset */
-	pwr->gpu_freq_preference = level;
-	pwr->gpu_freq_locked = true;
-	pr_info("GPU max_pwrlevel set to %u, auto-locking to prevent reset\n", level);
 
 	/* Update the current level using the new limit */
 	kgsl_pwrctrl_pwrlevel_change(device, pwr->active_pwrlevel);
@@ -709,14 +707,10 @@ static ssize_t kgsl_pwrctrl_gpu_freq_lock_store(struct device *dev,
 
 	mutex_lock(&device->mutex);
 	device->pwrctrl.gpu_freq_locked = val ? 1 : 0;
-	if (val) {
-		/* Store current max_pwrlevel as preference for auto-restore */
-		device->pwrctrl.gpu_freq_preference = device->pwrctrl.max_pwrlevel;
-		pr_info("GPU frequency limits locked (preference=%u) - preventing reset to stock\n",
-			device->pwrctrl.gpu_freq_preference);
-	} else {
+	if (val)
+		pr_info("GPU frequency limits locked - preventing reset to stock\n");
+	else
 		pr_info("GPU frequency limits unlocked - allowing dynamic scaling\n");
-	}
 	mutex_unlock(&device->mutex);
 
 	return count;
@@ -3267,13 +3261,6 @@ done:
 	spin_unlock(&pwr->limits_lock);
 
 	mutex_lock(&device->mutex);
-
-	/* If user has locked GPU frequency limits, restore preference if reset to stock */
-	if (pwr->gpu_freq_locked && max_level == 0 && pwr->gpu_freq_preference > 0) {
-		max_level = pwr->gpu_freq_preference;
-		pr_debug("Restoring GPU freq preference %u (was reset to stock)\n", max_level);
-	}
-
 	pwr->thermal_pwrlevel = max_level;
 	kgsl_pwrctrl_pwrlevel_change(device, pwr->active_pwrlevel);
 	mutex_unlock(&device->mutex);
