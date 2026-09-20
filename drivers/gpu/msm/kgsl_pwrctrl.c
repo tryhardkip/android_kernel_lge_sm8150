@@ -598,13 +598,6 @@ static ssize_t kgsl_pwrctrl_thermal_pwrlevel_store(struct device *dev,
 	if (level > pwr->num_pwrlevels - 2)
 		level = pwr->num_pwrlevels - 2;
 
-	/* If user has locked GPU frequency limits, prevent thermal overrides */
-	if (pwr->gpu_freq_locked) {
-		mutex_unlock(&device->mutex);
-		pr_debug("GPU frequency lock active - ignoring thermal pwrlevel change\n");
-		return count;
-	}
-
 	pwr->thermal_pwrlevel = level;
 
 	/* Update the current level using the new limit */
@@ -656,61 +649,6 @@ static ssize_t kgsl_pwrctrl_max_pwrlevel_store(struct device *dev,
 
 	/* Update the current level using the new limit */
 	kgsl_pwrctrl_pwrlevel_change(device, pwr->active_pwrlevel);
-	mutex_unlock(&device->mutex);
-
-	return count;
-}
-
-/**
- * kgsl_pwrctrl_gpu_freq_lock_show() - Show GPU frequency lock status
- * @dev: Device pointer
- * @attr: Device attribute
- * @buf: Buffer to write to
- *
- * Show whether the GPU frequency limits are locked to prevent reset.
- */
-static ssize_t kgsl_pwrctrl_gpu_freq_lock_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	struct kgsl_device *device = kgsl_device_from_dev(dev);
-
-	if (device == NULL)
-		return 0;
-
-	return snprintf(buf, PAGE_SIZE, "%d\n", device->pwrctrl.gpu_freq_locked);
-}
-
-/**
- * kgsl_pwrctrl_gpu_freq_lock_store() - Set/clear GPU frequency lock
- * @dev: Device pointer
- * @attr: Device attribute
- * @buf: Buffer containing the value (1 = lock, 0 = unlock)
- * @count: Buffer size
- *
- * Lock GPU frequency limits to prevent system from resetting them to
- * stock values. This is useful when using apps like KernelTWEAKS/Konabess
- * to set custom GPU frequencies.
- */
-static ssize_t kgsl_pwrctrl_gpu_freq_lock_store(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct kgsl_device *device = kgsl_device_from_dev(dev);
-	unsigned int val = 0;
-	int ret;
-
-	if (device == NULL)
-		return 0;
-
-	ret = kgsl_sysfs_store(buf, &val);
-	if (ret)
-		return ret;
-
-	mutex_lock(&device->mutex);
-	device->pwrctrl.gpu_freq_locked = val ? 1 : 0;
-	if (val)
-		pr_info("GPU frequency limits locked - preventing reset to stock\n");
-	else
-		pr_info("GPU frequency limits unlocked - allowing dynamic scaling\n");
 	mutex_unlock(&device->mutex);
 
 	return count;
@@ -1557,9 +1495,6 @@ static DEVICE_ATTR(freq_table_mhz, 0444,
 static DEVICE_ATTR(pwrscale, 0644,
 	kgsl_pwrctrl_pwrscale_show,
 	kgsl_pwrctrl_pwrscale_store);
-static DEVICE_ATTR(gpu_freq_lock, 0644,
-	kgsl_pwrctrl_gpu_freq_lock_show,
-	kgsl_pwrctrl_gpu_freq_lock_store);
 
 static const struct attribute *pwrctrl_attr_list[] = {
 	&dev_attr_gpuclk.attr,
@@ -1587,7 +1522,6 @@ static const struct attribute *pwrctrl_attr_list[] = {
 	&dev_attr_freq_table_mhz.attr,
 	&dev_attr_temp.attr,
 	&dev_attr_pwrscale.attr,
-	&dev_attr_gpu_freq_lock.attr,
 	NULL,
 };
 
@@ -1604,7 +1538,6 @@ static struct sysfs_link link_names[] = {
 	{ "clock_mhz", "gpu_clock",},
 	{ "freq_table_mhz", "gpu_freq_table",},
 	{ "temp", "gpu_tmu",},
-	{ "gpu_freq_lock", "gpu_freq_lock",},
 };
 
 int kgsl_pwrctrl_init_sysfs(struct kgsl_device *device)
