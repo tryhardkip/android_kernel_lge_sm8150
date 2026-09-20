@@ -11,7 +11,11 @@
  * GNU General Public License for more details.
  */
 
-/* This sensor is used only for domestic(kr) models. */
+/* This sensor is used only for domestic(kr) models.
+ * Uses user_space governor -- thermal decisions handled by vendor HAL.
+ * The vorpal CPUfreq governor's thermal emergency net provides a
+ * secondary safety layer at 100C (before the 110C kernel thermal hard trip).
+ */
 &thermal_zones {
 	sub6-vts {
 		polling-delay-passive = <0>;
