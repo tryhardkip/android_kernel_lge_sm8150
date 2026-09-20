@@ -3536,7 +3536,7 @@ int smblib_get_prop_usb_voltage_now(struct smb_charger *chg,
 		rc = smblib_read_mid_voltage_chan(chg, val);
 	else
 		rc = smblib_read_usbin_voltage_chan(chg, val);
-	if (rc < 0) {
+	if (rc < 0 && pval.intval) {
 		smblib_err(chg, "Failed to read USBIN over vadc, rc=%d\n", rc);
 		ret = rc;
 	}
