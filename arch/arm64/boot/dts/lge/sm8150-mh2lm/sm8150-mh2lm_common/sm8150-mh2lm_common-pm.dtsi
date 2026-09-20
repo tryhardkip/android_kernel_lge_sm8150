@@ -148,6 +148,15 @@
 	lge,load-sw-on = <&tlmm 68 0>;
 };
 
+/* Thermal zones: ap-vts and chg-vts use user_space governor, delegated
+ * to the vendor HAL (QTI thermal management). CPU thermal throttling
+ * is handled by step_wise zones defined in sm8150-thermal.dtsi
+ * (cpu-* zones with 110C passive trip points).
+ *
+ * The vorpal CPUfreq governor has its own thermal emergency net that
+ * triggers at 100C -- proactively shedding load before the kernel's
+ * step_wise thermal framework engages the 110C hard trip.
+ */
 &thermal_zones {
 	ap-vts {
 		polling-delay-passive = <0>;
