@@ -2079,6 +2079,46 @@ static inline unsigned long task_util(struct task_struct *p)
 	return READ_ONCE(p->se.avg.util_avg);
 }
 
+/*
+ * Calculate a composite "active load bias" for a task based on:
+ * - Long-term PELT utilization (avg.util_avg)
+ * - Short-term burst estimation (util_est.enqueued)
+ *
+ * This allows more accurate prediction of immediate impact upon wakeup.
+ */
+static inline unsigned long task_active_load_bias(struct task_struct *p)
+{
+	unsigned long util_est = READ_ONCE(p->se.avg.util_est.enqueued);
+	unsigned long util_pelt = task_util(p);
+
+	/* Weighted combination: prioritize both sustained and bursty workload */
+	return (util_pelt + (util_est >> 1)) >> 1;
+}
+
+#ifdef CONFIG_SCHED_USE_INSIGHTS
+extern void update_insights(struct rq *rq);
+#else
+static inline void update_insights(struct rq *rq) {}
+#endif
+
+#ifdef CONFIG_SCHED_DYNAMIC_CAPACITY_ORIG
+extern void update_dynamic_capacity_orig(struct rq *rq);
+#else
+static inline void update_dynamic_capacity_orig(struct rq *rq) {}
+#endif
+
+#ifdef CONFIG_SCHED_IDLE_DRAIN_REDUCTION
+extern void reduce_idle_drain_pressure(struct rq *rq);
+#else
+static inline void reduce_idle_drain_pressure(struct rq *rq) {}
+#endif
+
+#ifdef CONFIG_SCHED_PROACTIVE_IDLE_BALANCE
+extern void check_proactive_balance(struct rq *rq);
+#else
+static inline void check_proactive_balance(struct rq *rq) {}
+#endif
+
 /**
  * Amount of capacity of a CPU that is (estimated to be) used by CFS tasks
  * @cpu: the CPU to get the utilization of

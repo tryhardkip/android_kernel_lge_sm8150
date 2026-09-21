@@ -4062,6 +4062,22 @@ unsigned int capacity_margin_freq = 1280; /* ~20% margin */
  * This function gets called by the timer code, with HZ frequency.
  * We call it with interrupts disabled.
  */
+#ifdef CONFIG_SCHED_USE_INSIGHTS
+void update_insights(struct rq *rq)
+{
+	struct cfs_rq *cfs_rq = &rq->cfs;
+	unsigned long avg_util = cfs_rq->avg.util_avg;
+
+	/*
+	 * Periodically collect and log CPU utilization insights for debugging
+	 * and tuning. Rate limit to prevent excessive log output.
+	 */
+	if (((rq->clock_task / 1000) % 7) == 0 && printk_ratelimit())
+		printk(KERN_DEBUG "CPU%d: avg_util=%lu, nr_running=%d\n",
+		 rq->cpu, avg_util, rq->nr_running);
+}
+#endif
+
 void scheduler_tick(void)
 {
 	int cpu = smp_processor_id();
@@ -4112,7 +4128,23 @@ void scheduler_tick(void)
 #ifdef CONFIG_SCHED_WALT
 	if (curr->sched_class == &fair_sched_class)
 		check_for_migration(rq, curr);
-#endif /* bye walt */		
+#endif /* bye walt */
+
+#ifdef CONFIG_SCHED_USE_INSIGHTS
+	update_insights(rq);
+#endif
+
+#ifdef CONFIG_SCHED_DYNAMIC_CAPACITY_ORIG
+	update_dynamic_capacity_orig(rq);
+#endif
+
+#ifdef CONFIG_SCHED_IDLE_DRAIN_REDUCTION
+	reduce_idle_drain_pressure(rq);
+#endif
+
+#ifdef CONFIG_SCHED_PROACTIVE_IDLE_BALANCE
+	check_proactive_balance(rq);
+#endif
 }
 
 #ifdef CONFIG_NO_HZ_FULL
