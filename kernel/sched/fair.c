@@ -8879,6 +8879,11 @@ pick_cpu:
 	rcu_read_unlock();
 
 #ifdef CONFIG_SCHED_SMART_CLUSTERING
+static int
+select_cluster_compat_cpu(struct task_struct *p, int prev_cpu, int target_cpu);
+#endif
+
+#ifdef CONFIG_SCHED_SMART_CLUSTERING
 	/*
 	 * Apply smart clustering to improve cache locality for related tasks.
 	 */
@@ -12733,7 +12738,7 @@ void reduce_idle_drain_pressure(struct rq *rq)
 	unsigned long util;
 
 	/* Check if system is lightly loaded */
-	util = READ_ONCE(rq->avg.util_avg);
+	util = READ_ONCE(rq->cfs.avg.util_avg);
 	if (util < (SCHED_CAPACITY_SCALE * sysctl_sched_idle_drain_reduction / 100)) {
 		/* System is idle, increment counter */
 		if (*counter < UINT_MAX)
@@ -12760,7 +12765,7 @@ void reduce_idle_drain_pressure(struct rq *rq)
 void check_proactive_balance(struct rq *rq)
 {
 	int runnable = rq->nr_running;
-	unsigned long util = READ_ONCE(rq->avg.util_avg);
+	unsigned long util = READ_ONCE(rq->cfs.avg.util_avg);
 
 	/*
 	 * If system is lightly loaded (few runnable tasks and low utilization),
