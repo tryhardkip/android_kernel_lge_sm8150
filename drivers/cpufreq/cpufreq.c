@@ -797,7 +797,7 @@ static ssize_t store_scaling_governor(struct cpufreq_policy *policy,
 		return -EINVAL;
 		
 	if (!strcmp(str_governor, "schedutil"))
-		strcpy(str_governor, "vorpal");
+		strcpy(str_governor, "moonbeam");
 
 	if (cpufreq_parse_governor(str_governor, &new_policy.policy,
 						&new_policy.governor))
