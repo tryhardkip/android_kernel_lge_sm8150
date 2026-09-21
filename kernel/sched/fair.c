@@ -8776,6 +8776,10 @@ static inline int wake_energy(struct task_struct *p, int prev_cpu,
  *
  * preempt must be disabled.
  */
+#ifdef CONFIG_SCHED_SMART_CLUSTERING
+static int
+select_cluster_compat_cpu(struct task_struct *p, int prev_cpu, int target_cpu);
+#endif
 static int
 select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_flags,
 		    int sibling_count_hint)
@@ -8877,11 +8881,6 @@ pick_cpu:
 	}
 
 	rcu_read_unlock();
-
-#ifdef CONFIG_SCHED_SMART_CLUSTERING
-static int
-select_cluster_compat_cpu(struct task_struct *p, int prev_cpu, int target_cpu);
-#endif
 
 #ifdef CONFIG_SCHED_SMART_CLUSTERING
 	/*
