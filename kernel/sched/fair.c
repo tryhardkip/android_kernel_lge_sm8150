@@ -4393,13 +4393,12 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 		struct task_struct *p = task_of(se);
 		unsigned long demand = 0;
 
-		/* Use WALT demand_scaled if available, else fall back to PELT */
-#ifdef CONFIG_SCHED_WALT
-		if (likely(!walt_disabled && sysctl_sched_use_walt_task_util))
-			demand = p->ravg.demand_scaled;
-		else
-#endif
-			demand = task_util(p);
+		/*
+		 * task_util() already returns WALT demand_scaled when WALT is
+		 * active and falls back to PELT util otherwise, so no separate
+		 * WALT branch is needed here.
+		 */
+		demand = task_util(p);
 
 		/*
 		 * Set boost level proportional to utilization - higher util
