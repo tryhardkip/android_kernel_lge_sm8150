@@ -1188,6 +1188,24 @@ config SCHED_AUTOGROUP
 	  desktop applications.  Task group autogeneration is currently based
 	  upon task session.
 
+config SCHED_USE_INSIGHTS
+	bool "Enable scheduler utilization insights"
+	default n
+	help
+	  Enable periodic collection and optional logging of detailed
+	  CPU utilization information for profiling or tuning purposes.
+
+config SCHED_DYNAMIC_CAPACITY_ORIG
+	bool "Enable dynamic updates to cpu_capacity_orig"
+	depends on SMP
+	default n
+	help
+	  This option enables periodic recalculation of cpu_capacity_orig
+	  based on observed utilization patterns and thermal behavior.
+	  This helps improve load balancing accuracy on devices where
+	  static boot-time capacity values don't reflect real-world
+	  performance characteristics.
+
 config SCHED_TUNE
 	bool "Boosting for CFS tasks (EXPERIMENTAL)"
 	depends on SMP
@@ -1210,6 +1228,47 @@ config SCHED_TUNE
 	  utilization-driven frequency selection is in use).
 
 	  If unsure, say N.
+
+config SCHED_ADAPTIVE_LOAD_BOOST
+	bool "Enable adaptive load boosting during wake-up"
+	depends on SMP
+	depends on WALT || PELT
+	default n
+	help
+	  This option enables temporary load boosting of recently woken
+	  tasks based on utilization signals. It increases the apparent
+	  load of bursty tasks temporarily to encourage migration to less
+	  loaded CPUs. The boost decays over time during scheduler ticks.
+
+config SCHED_SMART_CLUSTERING
+	bool "Enable smart task clustering during wake-up"
+	depends on SMP
+	default n
+	help
+	  This option enables intelligent clustering of related tasks
+	  during wake-up by preferring CPUs that have recently executed
+	  tasks with the same address space or that are I/O-bound.
+	  This improves cache locality and reduces cross-cluster traffic.
+
+config SCHED_IDLE_DRAIN_REDUCTION
+	bool "Enable idle load drain reduction"
+	depends on SMP
+	default n
+	help
+	  This option enables logic to detect sustained low activity on
+	  CPUs and temporarily reduce the frequency of idle load balancing
+	  sweeps, reducing unnecessary CPU wakeups and improving battery
+	  life on lightly loaded systems.
+
+config SCHED_PROACTIVE_IDLE_BALANCE
+	bool "Enable proactive idle load balancing"
+	depends on SMP
+	default n
+	help
+	  This option enables early triggering of idle load balancing
+	  when CPUs are approaching an idle state, rather than waiting
+	  for the regular balancing interval. This improves wake-up
+	  latency and responsiveness by pre-distributing tasks.
 
 config CPUSET_ASSIST
 	bool "Cpuset configuration helper"

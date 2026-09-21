@@ -99,10 +99,47 @@ unsigned int normalized_sysctl_sched_latency		= 6000000ULL;
  * Enable/disable honoring sync flag in energy-aware wakeups.
  */
 unsigned int sysctl_sched_sync_hint_enable = 1;
+
+/*
+ * Enable faster PELT decay reset for tasks waking after sleep.
+ * When enabled, sleeping tasks get accelerated decay applied to their
+ * PELT signals, allowing better task placement decisions.
+ */
+unsigned int sysctl_sched_pelt_fast_decay = 1;
+
 /*
  * Enable/disable using cstate knowledge in idle sibling selection
  */
 unsigned int sysctl_sched_cstate_aware = 1;
+
+#ifdef CONFIG_SCHED_IDLE_DRAIN_REDUCTION
+/*
+ * Threshold for considering system load as "light" to reduce idle balancing
+ * Default: 25 (meaning <25% average CPU utilization across active CPUs)
+ */
+unsigned int sysctl_sched_idle_drain_reduction = 25;
+#endif
+
+#ifdef CONFIG_SCHED_PROACTIVE_IDLE_BALANCE
+/*
+ * Threshold for proactively triggering idle load balancing.
+ * When number of runnable tasks drops below this value, early balance is triggered.
+ * Default: 2 (when only 1-2 tasks remain, preemptively redistribute)
+ */
+unsigned int sysctl_sched_proactive_balance_threshold = 2;
+#endif
+
+#ifdef CONFIG_SCHED_ADAPTIVE_LOAD_BOOST
+/* Scale factor for converting utilization to boost value */
+#define BOOST_SCALE		64U
+/* Maximum boost level (7-bit value) */
+#define MAX_BOOST_LEVEL		127U
+/*
+ * Decay rate for load boost (in scheduler ticks)
+ * Higher value = faster decay
+ */
+#define BOOST_DECAY_TICKS		4U
+#endif /* CONFIG_SCHED_ADAPTIVE_LOAD_BOOST */
 
 /*
  * The initial- and re-scaling of tunables is configurable
@@ -3294,6 +3331,19 @@ __update_load_avg_se(u64 now, int cpu, struct cfs_rq *cfs_rq, struct sched_entit
 		}
 #endif /* UTIL_EST_DEBUG */
 
+		/*
+		 * Gradually decay the load boost assigned during wake-up.
+		 * This ensures the temporary boost doesn't persist indefinitely.
+		 */
+#ifdef CONFIG_SCHED_ADAPTIVE_LOAD_BOOST
+		if (entity_is_task(se) && se->load_boost > 0) {
+			if (se->load_boost > BOOST_DECAY_TICKS)
+				se->load_boost -= BOOST_DECAY_TICKS;
+			else
+				se->load_boost = 0;
+		}
+#endif
+
 		return 1;
 	}
 
@@ -4304,8 +4354,60 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	update_cfs_shares(se);
 	account_entity_enqueue(cfs_rq, se);
 
-	if (flags & ENQUEUE_WAKEUP)
+	if (flags & ENQUEUE_WAKEUP) {
 		place_entity(cfs_rq, se, 0);
+
+		/*
+		 * Apply faster PELT decay for tasks that were sleeping
+		 * to improve scheduling decisions.
+		 */
+		if (sysctl_sched_pelt_fast_decay && entity_is_task(se)) {
+			struct task_struct *p = task_of(se);
+			u64 sleep_time;
+
+			sleep_time = rq_clock_task(rq_of(cfs_rq)) - se->exec_start;
+			if (sleep_time > sysctl_sched_latency) {
+				/*
+				 * Accelerate PELT decay by reducing load averages
+				 * proportionally to sleep time. This prevents stale
+				 * utilization data from affecting placement decisions.
+				 */
+				unsigned long decay_factor;
+
+				/* Decay factor: longer sleep = more decay */
+				decay_factor = min_t(unsigned long,
+				                   sleep_time / sysctl_sched_latency,
+				                   16UL);
+
+				se->avg.load_avg >>= min_t(int, decay_factor, 4);
+				se->avg.util_avg >>= min_t(int, decay_factor, 4);
+			}
+		}
+	}
+#ifdef CONFIG_SCHED_ADAPTIVE_LOAD_BOOST
+	/*
+	 * Apply adaptive load boost for recently woken tasks to influence
+	 * placement decisions towards less-loaded CPUs.
+	 */
+	if (flags & ENQUEUE_WAKEUP && entity_is_task(se)) {
+		struct task_struct *p = task_of(se);
+		unsigned long demand = 0;
+
+		/* Use WALT demand_scaled if available, else fall back to PELT */
+		if (likely(!walt_disabled && sysctl_sched_use_walt_task_util))
+			demand = p->ravg.demand_scaled;
+		else
+			demand = task_util(p);
+
+		/*
+		 * Set boost level proportional to utilization - higher util
+		 * tasks get higher boost to encourage spreading.
+		 */
+		se->load_boost = min_t(unsigned long,
+				       (demand * BOOST_SCALE) >> SCHED_CAPACITY_SHIFT,
+				       MAX_BOOST_LEVEL);
+	}
+#endif /* CONFIG_SCHED_ADAPTIVE_LOAD_BOOST */
 	/* Entity has migrated, no longer consider this task hot */
 	if (flags & ENQUEUE_MIGRATED)
 		se->exec_start = 0;
@@ -6970,6 +7072,15 @@ static int wake_affine(struct sched_domain *sd, struct task_struct *p,
 {
 	int this_cpu = smp_processor_id();
 	bool affine = false;
+	unsigned long bias;
+
+	/*
+	 * If the waking task shows high burst tendency, avoid waking on
+	 * a nearly-full CPU unless explicitly requested via sync semantics.
+	 */
+	bias = task_active_load_bias(p);
+	if (bias > (SCHED_CAPACITY_SCALE >> 3)) /* >12.5% threshold */
+		affine = false; /* force spreading */
 
 	if (sched_feat(WA_IDLE) && !affine)
 		affine = wake_affine_idle(sd, p, this_cpu, prev_cpu, sync);
@@ -8767,6 +8878,17 @@ pick_cpu:
 
 	rcu_read_unlock();
 
+#ifdef CONFIG_SCHED_SMART_CLUSTERING
+	/*
+	 * Apply smart clustering to improve cache locality for related tasks.
+	 */
+	if (sd_flag & SD_BALANCE_WAKE) {
+		int clustered_cpu = select_cluster_compat_cpu(p, prev_cpu, new_cpu);
+		if (clustered_cpu != new_cpu)
+			new_cpu = clustered_cpu;
+	}
+#endif
+
 #ifdef CONFIG_NO_HZ_COMMON
 	if (nohz_kick_needed(cpu_rq(new_cpu), true))
 		nohz_balancer_kick(true);
@@ -8774,6 +8896,59 @@ pick_cpu:
 
 	return new_cpu;
 }
+
+#ifdef CONFIG_SCHED_SMART_CLUSTERING
+/*
+ * Smart Task Clustering: Prefer placing related tasks on the same CPU cluster
+ * to reduce inter-cluster traffic and improve cache locality.
+ * 
+ * This looks at recently scheduled tasks on each CPU and biases the selection
+ * towards CPUs that have recently run related tasks (same mm, etc).
+ */
+static int
+select_cluster_compat_cpu(struct task_struct *p, int prev_cpu, int target_cpu)
+{
+	int i;
+	int best_cpu = target_cpu;
+	unsigned int min_distance = UINT_MAX;
+	struct mm_struct *task_mm = p->mm;
+
+	/* If no target or target is invalid, keep original choice */
+	if (target_cpu < 0 || target_cpu >= nr_cpu_ids || !cpu_online(target_cpu))
+		return prev_cpu;
+
+	/* Look through all online CPUs to find one with related tasks */
+	for_each_online_cpu(i) {
+		struct rq *rq = cpu_rq(i);
+		struct task_struct *curr;
+		unsigned int distance = 0;
+
+		rcu_read_lock();
+		curr = rcu_dereference(rq->curr);
+
+		if (curr && curr->mm == task_mm) {
+			/* Same address space - strong affinity */
+			distance = 1;
+		} else if (curr && curr->in_iowait) {
+			/* I/O bound tasks - medium affinity */
+			distance = 2;
+		}
+
+		rcu_read_unlock();
+
+		if (distance < min_distance) {
+			min_distance = distance;
+			best_cpu = i;
+		}
+	}
+
+	/* Only override if we found a better match */
+	if (best_cpu != target_cpu && min_distance < 3)
+		return best_cpu;
+
+	return target_cpu;
+}
+#endif
 
 /*
  * Called immediately before a task is migrated to a new cpu; task_cpu(p) and
@@ -10059,6 +10234,38 @@ static void update_cpu_capacity(struct sched_domain *sd, int cpu)
 	sdg->sgc->min_capacity = capacity;
 	sdg->sgc->max_capacity = capacity;
 }
+
+#ifdef CONFIG_SCHED_DYNAMIC_CAPACITY_ORIG
+void update_dynamic_capacity_orig(struct rq *rq)
+{
+	unsigned long new_capacity, thermal_limit;
+	int cpu = rq->cpu;
+
+	/*
+	 * Periodically update cpu_capacity_orig with dynamic constraints.
+	 * This accounts for thermal throttling and other runtime power
+	 * limitations that may not be reflected in static boot-time values.
+	 */
+	if (!raw_spin_trylock(&rq->lock))
+		return;
+
+	thermal_limit = thermal_cap(cpu);
+	new_capacity = min(arch_scale_cpu_capacity(NULL, cpu), thermal_limit);
+	new_capacity *= arch_scale_max_freq_capacity(NULL, cpu);
+	new_capacity >>= SCHED_CAPACITY_SHIFT;
+
+	/* Avoid rapid fluctuations */
+	if (abs(new_capacity - rq->cpu_capacity_orig) >
+	    (SCHED_CAPACITY_SCALE >> 4)) /* ~6.25% threshold */ {
+		rq->cpu_capacity_orig = new_capacity;
+		if (printk_ratelimit())
+			printk(KERN_DEBUG "CPU%d: capacity_orig updated to %lu\n",
+			       cpu, new_capacity);
+	}
+
+	raw_spin_unlock(&rq->lock);
+}
+#endif
 
 void update_group_capacity(struct sched_domain *sd, int cpu)
 {
@@ -12507,6 +12714,70 @@ static __latent_entropy void run_rebalance_domains(struct softirq_action *h)
 	rebalance_domains(this_rq, idle);
 #endif
 }
+
+#ifdef CONFIG_SCHED_IDLE_DRAIN_REDUCTION
+/*
+ * Reduce idle load drain pressure by temporarily skipping idle balance
+ * when system is consistently under light load.
+ *
+ * Tracks number of consecutive idle ticks and skips balancing after
+ * a threshold to reduce CPU wake up frequency on battery.
+ */
+#define IDLE_DRAIN_SKIP_THRESHOLD 10  /* ticks of sustained idle */
+
+void reduce_idle_drain_pressure(struct rq *rq)
+{
+	static DEFINE_PER_CPU(unsigned int, idle_tick_counter);
+	int cpu = rq->cpu;
+	unsigned int *counter = &per_cpu(idle_tick_counter, cpu);
+	unsigned long util;
+
+	/* Check if system is lightly loaded */
+	util = READ_ONCE(rq->avg.util_avg);
+	if (util < (SCHED_CAPACITY_SCALE * sysctl_sched_idle_drain_reduction / 100)) {
+		/* System is idle, increment counter */
+		if (*counter < UINT_MAX)
+			(*counter)++;
+
+		/* If we've been idle long enough, reduce drain pressure */
+		if (*counter >= IDLE_DRAIN_SKIP_THRESHOLD) {
+			/* Temporarily delay next load balance */
+			rq->next_balance = jiffies + HZ; /* 1-second delay */
+		}
+	} else {
+		/* System is active, reset counter */
+		*counter = 0;
+	}
+}
+#endif
+
+#ifdef CONFIG_SCHED_PROACTIVE_IDLE_BALANCE
+/*
+ * Proactive idle load balancing: When runnable task count drops below
+ * a threshold, early-trigger load balancing to distribute tasks before
+ * CPUs go idle, reducing wake-up latencies.
+ */
+void check_proactive_balance(struct rq *rq)
+{
+	int runnable = rq->nr_running;
+	unsigned long util = READ_ONCE(rq->avg.util_avg);
+
+	/*
+	 * If system is lightly loaded (few runnable tasks and low utilization),
+	 * trigger early balancing to redistribute work proactively.
+	 */
+	if (runnable <= sysctl_sched_proactive_balance_threshold &&
+	    util < (SCHED_CAPACITY_SCALE * 50 / 100)) { /* <50% utilization */
+
+		/* Temporarily bring forward next balance */
+		rq->next_balance = jiffies - 1;
+
+		/* Force immediate softirq trigger */
+		if (time_after_eq(jiffies, rq->next_balance))
+			raise_softirq(SCHED_SOFTIRQ);
+	}
+}
+#endif
 
 /*
  * Trigger the SCHED_SOFTIRQ if it is time to do periodic load balancing.

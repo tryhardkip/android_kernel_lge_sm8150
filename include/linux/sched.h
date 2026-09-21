@@ -539,6 +539,15 @@ struct sched_entity {
 
 	struct sched_statistics		statistics;
 
+#ifdef CONFIG_SCHED_ADAPTIVE_LOAD_BOOST
+	/*
+	 * Temporary load boost applied during wakeup to influence task
+	 * placement decisions. Decays gradually over subsequent scheduler
+	 * ticks until reaching zero.
+	 */
+	u8				load_boost;
+#endif /* CONFIG_SCHED_ADAPTIVE_LOAD_BOOST */
+
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	int				depth;
 	struct sched_entity		*parent;
