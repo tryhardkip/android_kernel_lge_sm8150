@@ -4394,9 +4394,11 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 		unsigned long demand = 0;
 
 		/* Use WALT demand_scaled if available, else fall back to PELT */
+#ifdef CONFIG_SCHED_WALT
 		if (likely(!walt_disabled && sysctl_sched_use_walt_task_util))
 			demand = p->ravg.demand_scaled;
 		else
+#endif
 			demand = task_util(p);
 
 		/*

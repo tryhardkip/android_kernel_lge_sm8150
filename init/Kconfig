@@ -1232,7 +1232,6 @@ config SCHED_TUNE
 config SCHED_ADAPTIVE_LOAD_BOOST
 	bool "Enable adaptive load boosting during wake-up"
 	depends on SMP
-	depends on WALT || PELT
 	default n
 	help
 	  This option enables temporary load boosting of recently woken
