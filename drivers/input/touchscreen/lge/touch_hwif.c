@@ -18,7 +18,6 @@
 
 #include <linux/version.h>
 #include <linux/sched.h>
-#include <linux/irqdesc.h>
 
 /*
  *  Include to touch core Header File
