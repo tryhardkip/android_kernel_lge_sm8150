@@ -8504,10 +8504,10 @@ static void uclamp_assist_apply(struct cgroup_subsys_state *css)
 {
 	static const struct uclamp_assist_param tgts[] = {
 		{ "top-app",           10,  -1, 1, 1 },  /* 10-100% */
-		{ "foreground",        10,  80, 1, 0 },  /* 10-80%  */
-		{ "background",         0,  50, 0, 0 },  /* 0-50%   */
-		{ "system-background",  0,  60, 0, 0 },  /* 0-60%   */
-		{ "restricted",         0,  20, 0, 0 },  /* 0-20%   */
+		{ "foreground",         0,  70, 1, 0 },  /* 0-70%   */
+		{ "background",         0,  35, 0, 0 },  /* 0-35%   */
+		{ "system-background",  0,  45, 0, 0 },  /* 0-45%   */
+		{ "restricted",         0,  15, 0, 0 },  /* 0-15%   */
 		{ "camera-daemon",     10,  -1, 1, 1 },  /* 10-100% */
 	};
 	char name_buf[NAME_MAX + 1];
