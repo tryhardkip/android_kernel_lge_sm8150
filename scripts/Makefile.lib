@@ -143,6 +143,17 @@ _c_flags += $(if $(patsubst n%,, \
 	$(CFLAGS_KCOV))
 endif
 
+#
+# Enable clang's PGO profiling flags for a file, directory or for all files
+# depending on variables PGO_PROFILE_obj.o and PGO_PROFILE (in this order).
+# Instrumentation is enabled by default; set PGO_PROFILE(_obj.o) := n to skip.
+#
+ifeq ($(CONFIG_PGO_CLANG),y)
+_c_flags += $(if $(patsubst n%,, \
+		$(PGO_PROFILE_$(basetarget).o)$(PGO_PROFILE)y), \
+		$(CFLAGS_PGO_CLANG))
+endif
+
 # If building the kernel in a separate objtree expand all occurrences
 # of -Idir to -I$(srctree)/dir except for absolute paths (starting with '/').
 

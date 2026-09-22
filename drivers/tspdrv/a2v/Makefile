@@ -27,3 +27,9 @@
 
 obj-$(CONFIG_A2V)	+= a2v_if.o
 
+# PGO instrumentation lets the optimizer prove the fixed-size write_buffer
+# usercopy in a2v_write() can overflow, which turns the hardened-usercopy
+# check into an undefined __bad_copy_to reference at LTO link time. Keep this
+# vendor driver's original codegen by excluding it from PGO.
+PGO_PROFILE := n
+

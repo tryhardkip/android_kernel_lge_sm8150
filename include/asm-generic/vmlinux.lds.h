@@ -946,6 +946,40 @@
  * matches the requirement of PAGE_ALIGNED_DATA.
  *
  * use 0 as page_align if page_aligned data is not used */
+
+/*
+ * Clang's PGO (Profile Guided Optimization) instrumentation data.
+ * The counters are updated at runtime, so these sections must live in the
+ * writable data segment.
+ */
+#ifdef CONFIG_PGO_CLANG
+#define PGO_CLANG_DATA							\
+	__llvm_prf_data : {						\
+		__llvm_prf_start = .;					\
+		__llvm_prf_data_start = .;				\
+		KEEP(*(__llvm_prf_data))				\
+		__llvm_prf_data_end = .;				\
+	}								\
+	__llvm_prf_cnts : {						\
+		__llvm_prf_cnts_start = .;				\
+		KEEP(*(__llvm_prf_cnts))				\
+		__llvm_prf_cnts_end = .;				\
+	}								\
+	__llvm_prf_names : {						\
+		__llvm_prf_names_start = .;				\
+		KEEP(*(__llvm_prf_names))				\
+		__llvm_prf_names_end = .;				\
+	}								\
+	__llvm_prf_vnds : {						\
+		__llvm_prf_vnds_start = .;				\
+		KEEP(*(__llvm_prf_vnds))				\
+		__llvm_prf_vnds_end = .;				\
+		__llvm_prf_end = .;					\
+	}
+#else
+#define PGO_CLANG_DATA
+#endif
+
 #define RW_DATA_SECTION(cacheline, pagealigned, inittask)		\
 	. = ALIGN(PAGE_SIZE);						\
 	.data : AT(ADDR(.data) - LOAD_OFFSET) {				\

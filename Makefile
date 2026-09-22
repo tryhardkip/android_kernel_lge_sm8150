@@ -741,6 +741,14 @@ KBUILD_CFLAGS	+= -mllvm -polly \
                    -mllvm -polly-invariant-load-hoisting
 endif
 
+# Clang's PGO (Profile Guided Optimization) instrumentation flags.
+# When CONFIG_PGO_CLANG is set, instrument the kernel to generate profiling
+# data at runtime (exposed via /sys/kernel/debug/pgo/profraw).
+ifdef CONFIG_PGO_CLANG
+CFLAGS_PGO_CLANG := -fprofile-generate
+export CFLAGS_PGO_CLANG
+endif
+
 KBUILD_CFLAGS	+= $(call cc-option,-fno-delete-null-pointer-checks,)
 KBUILD_CFLAGS	+= $(call cc-disable-warning,frame-address,)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, format-truncation)
