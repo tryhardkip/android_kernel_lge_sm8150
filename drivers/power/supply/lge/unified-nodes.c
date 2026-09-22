@@ -916,7 +916,7 @@ static ssize_t charger_name_store(struct device* dev, struct device_attribute* a
 
 	if (dev && dev->platform_data) {
 		ori = ((struct unified_nodes*)dev->platform_data)->charger_name;
-		if (!strcmp(ori, buf))
+		if (strcmp(ori, buf))
 			pr_uninode("Storing %s\n", buf);
 
 		strcpy(ori, buf);
