@@ -15,6 +15,7 @@
 #include <linux/kernel.h>
 #include <linux/hrtimer.h>
 #include <linux/devfreq_cooling.h>
+#include <linux/devfreq_boost.h>
 #include <linux/pm_opp.h>
 
 #include "kgsl.h"
@@ -768,6 +769,7 @@ int kgsl_pwrscale_init(struct device *dev, const char *governor)
 	}
 
 	pwrscale->devfreqptr = devfreq;
+	devfreq_register_boost_device(DEVFREQ_GPU, devfreq);
 	pwrscale->cooling_dev = of_devfreq_cooling_register(
 					device->pdev->dev.of_node, devfreq);
 	if (IS_ERR(pwrscale->cooling_dev))
@@ -783,6 +785,9 @@ int kgsl_pwrscale_init(struct device *dev, const char *governor)
 			&pwrscale->bus_profile.profile, "gpubw_mon", NULL);
 		if (IS_ERR(pwrscale->bus_devfreq))
 			pwrscale->bus_devfreq = NULL;
+		else
+			devfreq_register_boost_device(DEVFREQ_GPU_BW,
+						      pwrscale->bus_devfreq);
 	}
 
 	ret = sysfs_create_link(&device->dev->kobj,
