@@ -58,7 +58,7 @@ extern int qti_haptic_timed_vmax(int value);
 
 IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_AmpDisable(VibeUInt8 nActuatorIndex)
 {
-    DbgOut((DBL_ERROR, "ImmVibeSPI_ForceOut_AmpDisable.\n"));
+    DbgOut((DBL_INFO, "ImmVibeSPI_ForceOut_AmpDisable.\n"));
 
     return VIBE_S_SUCCESS;
 }
@@ -68,7 +68,7 @@ IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_AmpDisable(VibeUInt8 nActuatorIndex
 */
 IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_AmpEnable(VibeUInt8 nActuatorIndex)
 {
-    DbgOut((DBL_ERROR, "ImmVibeSPI_ForceOut_AmpEnable.\n"));
+    DbgOut((DBL_INFO, "ImmVibeSPI_ForceOut_AmpEnable.\n"));
 
     return VIBE_S_SUCCESS;
 }
