@@ -559,6 +559,25 @@ config CLEANCACHE
 
 	  If unsure, say Y to enable cleancache
 
+config KCOMPRESSD
+	bool "Asynchronous swap-out compression daemon (kcompressd)"
+	depends on SWAP
+	default n
+	help
+	  Offload swap-out compression done during background (kswapd)
+	  reclaim to a dedicated "kcompressd" kernel thread. Normally the
+	  compression of an anonymous page into zram/zswap happens
+	  synchronously in the reclaim path, so kswapd stalls while the
+	  page is compressed. With this option, kswapd hands the write to
+	  kcompressd and continues scanning/reclaiming other pages, which
+	  reduces reclaim-induced stutter under memory pressure.
+
+	  Direct reclaim is never offloaded, so an allocating task under
+	  pressure still makes guaranteed forward progress. The feature can
+	  be toggled at runtime via the vm.kcompressd sysctl.
+
+	  If unsure, say N.
+
 config FRONTSWAP
 	bool "Enable frontswap to cache swap pages if tmem is present"
 	depends on SWAP
