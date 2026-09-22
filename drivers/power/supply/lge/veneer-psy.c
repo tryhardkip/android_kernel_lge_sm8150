@@ -422,7 +422,7 @@ static void update_veneer_uninodes(struct veneer* veneer_me)
 			union power_supply_propval val = { .intval = 0, };
 			power_supply_get_property(psy, POWER_SUPPLY_PROP_POWER_NOW, &val);
 			mw_now = val.intval / 1000;
-			pr_veneer("mw_now = %d\n", mw_now);
+			pr_debug("mw_now = %d\n", mw_now);
 		}
 
 		unified_nodes_store("charger_highspeed",
@@ -980,7 +980,7 @@ static void psy_external_changed(struct power_supply* psy_me)
 	}
 
 	if (strlen(hit)) {
-		pr_veneer("externally changed : %s\n", hit);
+		pr_debug("externally changed : %s\n", hit);
 		veneer_data_update(veneer_me);
 	}
 }
