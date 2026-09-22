@@ -8176,9 +8176,6 @@ static int cpu_cgroup_css_online(struct cgroup_subsys_state *css)
 
 #ifdef CONFIG_UCLAMP_TASK_GROUP
 	/* Propagate the effective uclamp value for the new group */
-#ifdef CONFIG_UCLAMP_ASSIST
-	static_branch_enable(&sched_uclamp_used);
-#endif
 	mutex_lock(&uclamp_mutex);
 #ifdef CONFIG_UCLAMP_ASSIST
 	uclamp_assist_apply(css);
@@ -8550,6 +8547,21 @@ static void uclamp_assist_apply(struct cgroup_subsys_state *css)
 		break;
 	}
 }
+
+/*
+ * Enable the uclamp static key once, in a clean context with no locks held.
+ * Doing this from cpu_cgroup_css_online() would take cpus_read_lock() while
+ * cgroup_mutex is held, which inverts the established
+ * cpus_read_lock -> cgroup_mutex order and can deadlock. This runs before
+ * userspace creates the cpu cgroups, so the key is live before the assist
+ * fires.
+ */
+static int __init uclamp_assist_enable(void)
+{
+	static_branch_enable(&sched_uclamp_used);
+	return 0;
+}
+late_initcall(uclamp_assist_enable);
 #endif /* CONFIG_UCLAMP_ASSIST */
 #endif /* CONFIG_UCLAMP_TASK_GROUP */
 
