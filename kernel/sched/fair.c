@@ -238,17 +238,19 @@ static inline u32 calc_burst_penalty(u64 burst_time) {
 	return min(MAX_BURST_PENALTY, scaled_penalty);
 }
 
-static inline u64 scale_slice(u64 delta, struct sched_entity *se) {
-	return mul_u64_u32_shr(delta, sched_prio_to_wmult[se->burst_score], 22);
-}
-
 static void update_burst_score(struct sched_entity *se) {
 	if (!entity_is_task(se)) return;
 	struct task_struct *p = task_of(se);
 	u8 prio = p->static_prio - MAX_RT_PRIO;
 	u8 prev_prio = min(39, prio + se->burst_score);
 
-	se->burst_score = se->burst_penalty >> 2;
+	/*
+	 * When BORE is disabled at runtime, force the burst score back to 0
+	 * so reweight_task() restores the task's nominal priority. Doing this
+	 * unconditionally here lets a toggle to 0 self-heal already-penalised
+	 * tasks on their next update_curr().
+	 */
+	se->burst_score = sched_bore ? (se->burst_penalty >> 2) : 0;
 
 	u8 new_prio = min(39, prio + se->burst_score);
 	if (new_prio != prev_prio)
@@ -1034,7 +1036,10 @@ static void update_curr(struct cfs_rq *cfs_rq)
 #ifdef CONFIG_SCHED_BORE
 	curr->burst_time += delta_exec;
 	update_burst_penalty(curr);
-	curr->vruntime += max(1ULL, calc_delta_fair(delta_exec, curr));
+	if (likely(sched_bore))
+		curr->vruntime += max(1ULL, calc_delta_fair(delta_exec, curr));
+	else
+		curr->vruntime += calc_delta_fair(delta_exec, curr);
 #else // !CONFIG_SCHED_BORE
 	curr->vruntime += calc_delta_fair(delta_exec, curr);
 #endif // CONFIG_SCHED_BORE
