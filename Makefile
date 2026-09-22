@@ -741,6 +741,15 @@ KBUILD_CFLAGS	+= -mllvm -polly \
                    -mllvm -polly-invariant-load-hoisting
 endif
 
+ifdef CONFIG_LLVM_MLGO
+# MLGO: ML-guided inlining. The model is embedded in the clang toolchain.
+# For full LTO the inlining runs at the LTO link step, so the flag is passed
+# to both the compiler and the linker.
+mlgo-flags := -mllvm -enable-ml-inliner=release
+KBUILD_CFLAGS  += $(mlgo-flags)
+KBUILD_LDFLAGS += $(mlgo-flags)
+endif
+
 KBUILD_CFLAGS	+= $(call cc-option,-fno-delete-null-pointer-checks,)
 KBUILD_CFLAGS	+= $(call cc-disable-warning,frame-address,)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, format-truncation)

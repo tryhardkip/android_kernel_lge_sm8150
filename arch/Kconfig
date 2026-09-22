@@ -674,6 +674,32 @@ config LTO_CLANG
 
 endchoice
 
+config LLVM_POLLY
+	bool "Enable LLVM Polly loop optimizer"
+	depends on LTO_CLANG
+	help
+	  Enable the LLVM Polly polyhedral loop optimizer. This can improve
+	  performance of loop-heavy code but requires a clang toolchain built
+	  with Polly support (most custom Android clang builds ship it).
+
+	  If unsure, say N.
+
+config LLVM_MLGO
+	bool "Enable MLGO machine-learning guided inlining"
+	depends on LTO_CLANG
+	help
+	  Enable MLGO (Machine Learning Guided Optimizations) release-mode
+	  inlining (-enable-ml-inliner=release). Inlining decisions are driven
+	  by an ML model that is embedded in the clang toolchain at the time
+	  the toolchain was built.
+
+	  This ONLY works with a clang build that was compiled with an embedded
+	  MLGO model (e.g. Neutron/Yuki/AOSP MLGO clang). If your toolchain
+	  lacks the model, the build will fail with a "release mode not
+	  enabled" error.
+
+	  If unsure, say N.
+
 config CFI
 	bool
 
