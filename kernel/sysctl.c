@@ -2073,6 +2073,17 @@ static struct ctl_table vm_table[] = {
 		.extra1		= &zero,
 		.extra2		= &one_hundred
 	},
+#ifdef CONFIG_KCOMPRESSD
+	{
+		.procname	= "kcompressd",
+		.data		= &sysctl_kcompressd,
+		.maxlen		= sizeof(sysctl_kcompressd),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
+#endif
 	{
 		.procname	= "user_reserve_kbytes",
 		.data		= &sysctl_user_reserve_kbytes,

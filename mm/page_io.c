@@ -25,7 +25,37 @@
 #include <linux/psi.h>
 #include <linux/uio.h>
 #include <linux/sched/task.h>
+#include <linux/kthread.h>
+#include <linux/freezer.h>
 #include <asm/pgtable.h>
+
+#ifdef CONFIG_KCOMPRESSD
+/*
+ * kcompressd: offload swap-out compression from kswapd to a dedicated
+ * kthread so that background reclaim does not stall on synchronous
+ * zram/zswap compression. This decouples kswapd's watermark restoration
+ * from the compression CPU cost: kswapd can keep scanning and reclaiming
+ * (e.g. clean file pages, which under le9uo we bias against) while
+ * kcompressd compresses the anonymous pages in parallel.
+ *
+ * Only kswapd (background) reclaim is offloaded. Direct reclaim stays
+ * synchronous so that an allocating task under pressure still makes
+ * guaranteed forward progress rather than handing work to a kthread and
+ * returning with no memory actually freed.
+ */
+int sysctl_kcompressd __read_mostly = 1;
+
+/* Cap the number of in-flight offloaded writes to bound pinned writeback. */
+#define KCOMPRESSD_MAX_INFLIGHT 256
+
+static struct task_struct *kcompressd_task;
+static struct bio_list kcompressd_bios;
+static DEFINE_SPINLOCK(kcompressd_lock);
+static DECLARE_WAIT_QUEUE_HEAD(kcompressd_wait);
+static atomic_t kcompressd_inflight = ATOMIC_INIT(0);
+
+static bool kcompressd_offload(struct page *page, struct writeback_control *wbc);
+#endif /* CONFIG_KCOMPRESSD */
 
 static struct bio *get_swap_bio(gfp_t gfp_flags,
 				struct page *page, bio_end_io_t end_io)
@@ -208,6 +238,15 @@ int swap_writepage(struct page *page, struct writeback_control *wbc)
 		end_page_writeback(page);
 		goto out;
 	}
+#ifdef CONFIG_KCOMPRESSD
+	/*
+	 * kcompressd_offload() returns true if it took ownership of the page
+	 * (writeback started asynchronously). On false the page is left locked
+	 * and untouched, so fall through to the synchronous path.
+	 */
+	if (kcompressd_offload(page, wbc))
+		goto out;
+#endif
 	ret = __swap_writepage(page, wbc, end_swap_bio_write);
 out:
 	return ret;
@@ -294,6 +333,110 @@ int __swap_writepage(struct page *page, struct writeback_control *wbc,
 out:
 	return ret;
 }
+
+#ifdef CONFIG_KCOMPRESSD
+static bool kcompressd_pending(void)
+{
+	bool pending;
+
+	spin_lock_irq(&kcompressd_lock);
+	pending = !bio_list_empty(&kcompressd_bios);
+	spin_unlock_irq(&kcompressd_lock);
+	return pending;
+}
+
+static int kcompressd_thread(void *data)
+{
+	set_freezable();
+
+	while (!kthread_should_stop()) {
+		struct bio *bio;
+
+		wait_event_freezable(kcompressd_wait,
+				     kcompressd_pending() ||
+				     kthread_should_stop());
+
+		for (;;) {
+			spin_lock_irq(&kcompressd_lock);
+			bio = bio_list_pop(&kcompressd_bios);
+			spin_unlock_irq(&kcompressd_lock);
+			if (!bio)
+				break;
+			/*
+			 * The expensive compression happens synchronously inside
+			 * zram's bio handling, but now in this kthread's context
+			 * rather than in kswapd. bio completion (end_swap_bio_write)
+			 * clears PG_writeback and drops the page.
+			 */
+			submit_bio(bio);
+			atomic_dec(&kcompressd_inflight);
+			cond_resched();
+		}
+	}
+	return 0;
+}
+
+/*
+ * Try to hand a swap-out off to kcompressd. Returns true if the page was
+ * taken over (writeback started asynchronously); false if the caller must
+ * fall back to the synchronous path, in which case the page is left locked
+ * and otherwise untouched.
+ */
+static bool kcompressd_offload(struct page *page, struct writeback_control *wbc)
+{
+	struct swap_info_struct *sis = page_swap_info(page);
+	struct bio *bio;
+
+	if (!READ_ONCE(sysctl_kcompressd) || !kcompressd_task)
+		return false;
+	/* Only background reclaim; direct reclaim must make real progress. */
+	if (!current_is_kswapd())
+		return false;
+	/* File-backed swap uses direct_IO, not the bio path handled here. */
+	if (sis->flags & SWP_FILE)
+		return false;
+	/* Keep it simple and safe: single (non-huge) pages only. */
+	if (hpage_nr_pages(page) != 1)
+		return false;
+	/* Backpressure: don't pin an unbounded amount of memory in writeback. */
+	if (atomic_read(&kcompressd_inflight) >= KCOMPRESSD_MAX_INFLIGHT)
+		return false;
+
+	bio = get_swap_bio(GFP_NOIO, page, end_swap_bio_write);
+	if (!bio)
+		return false;
+
+	bio->bi_opf = REQ_OP_WRITE | wbc_to_write_flags(wbc);
+	count_swpout_vm_event(page);
+	set_page_writeback(page);
+	unlock_page(page);
+
+	atomic_inc(&kcompressd_inflight);
+	spin_lock_irq(&kcompressd_lock);
+	bio_list_add(&kcompressd_bios, bio);
+	spin_unlock_irq(&kcompressd_lock);
+	wake_up(&kcompressd_wait);
+
+	return true;
+}
+
+static int __init kcompressd_init(void)
+{
+	struct task_struct *task;
+
+	bio_list_init(&kcompressd_bios);
+
+	task = kthread_run(kcompressd_thread, NULL, "kcompressd");
+	if (IS_ERR(task)) {
+		pr_err("kcompressd: failed to start kthread: %ld\n",
+		       PTR_ERR(task));
+		return 0;
+	}
+	kcompressd_task = task;
+	return 0;
+}
+late_initcall(kcompressd_init);
+#endif /* CONFIG_KCOMPRESSD */
 
 int swap_readpage(struct page *page, bool synchronous)
 {
