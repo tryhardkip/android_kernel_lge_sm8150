@@ -97,6 +97,12 @@ static int g_nMajor = 0;
     #include "VibeOSKernelLinuxTime.c"
 #endif
 
+/* Map internal DBL_* debug levels to kernel log levels so messages are
+ * emitted at an appropriate priority instead of always KERN_EMERG. */
+static const char *const _Dw7800KernLvl[6] = {
+    KERN_CRIT, KERN_ERR, KERN_WARNING, KERN_INFO, KERN_DEBUG, KERN_DEBUG
+};
+
 asmlinkage void _DbgOut(int level, const char *fmt,...)
 {
     static char printk_buf[MAX_DEBUG_BUFFER_LENGTH];
@@ -112,8 +118,8 @@ asmlinkage void _DbgOut(int level, const char *fmt,...)
 
         va_start(args, fmt);
 
-        ret = scnprintf(printk_buf, size, KERN_EMERG "%s:%s %s",
-             MODULE_NAME, prefix[level], fmt);
+        ret = scnprintf(printk_buf, size, "%s%s:%s %s",
+             _Dw7800KernLvl[level], MODULE_NAME, prefix[level], fmt);
         if (ret < size)
             vprintk(printk_buf, args);
 
@@ -129,8 +135,8 @@ asmlinkage static void _DbgOutV(int level, const char *fmt,va_list args)
 
     int ret;
     size_t size = sizeof(printk_buf);
-    ret = scnprintf(printk_buf, size, KERN_EMERG "%s:%s %s",
-         MODULE_NAME, prefix[level], fmt);
+    ret = scnprintf(printk_buf, size, "%s%s:%s %s",
+         _Dw7800KernLvl[level], MODULE_NAME, prefix[level], fmt);
     if (ret < size)
         vprintk(printk_buf, args);
 
