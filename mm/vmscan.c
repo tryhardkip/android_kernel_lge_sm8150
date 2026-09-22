@@ -3990,8 +3990,13 @@ static bool age_lruvec(struct lruvec *lruvec, struct scan_control *sc,
 	return true;
 }
 
-/* to protect the working set of the last N jiffies */
-static unsigned long lru_gen_min_ttl __read_mostly = 5 * HZ; // 5000ms
+/*
+ * To protect the working set of the last N jiffies. On 6-8GB devices this is
+ * kept short so it complements the le9uo clean-file protection: le9uo keeps the
+ * texture/file page cache resident, while a 1s TTL lets cold anonymous pages
+ * age into ZRAM instead of forcing premature OOM kills (app/game relaunches).
+ */
+static unsigned long lru_gen_min_ttl __read_mostly = 1 * HZ; // 1000ms
 
 static void lru_gen_age_node(struct pglist_data *pgdat, struct scan_control *sc)
 {
