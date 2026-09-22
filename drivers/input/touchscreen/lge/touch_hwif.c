@@ -17,6 +17,8 @@
  */
 
 #include <linux/version.h>
+#include <linux/sched.h>
+#include <linux/irqdesc.h>
 
 /*
  *  Include to touch core Header File
@@ -286,7 +288,23 @@ int touch_request_irq(unsigned int irq, irq_handler_t handler,
 			 irq_handler_t thread_fn,
 			 unsigned long flags, const char *name, void *dev)
 {
-	return request_threaded_irq(irq, handler, thread_fn, flags, name, dev);
+	int ret;
+	struct irq_desc *desc;
+
+	ret = request_threaded_irq(irq, handler, thread_fn, flags, name, dev);
+	if (ret)
+		return ret;
+
+	/*
+	 * Run the touch IRQ thread as low-priority SCHED_FIFO so finger
+	 * events preempt normal tasks and reach userspace with less jitter.
+	 * Low RT prio (1) keeps it below latency-critical kernel RT threads.
+	 */
+	desc = irq_to_desc(irq);
+	if (desc && desc->action && desc->action->thread)
+		sched_set_fifo_low(desc->action->thread);
+
+	return ret;
 }
 
 void touch_resend_irq(unsigned int irq)
