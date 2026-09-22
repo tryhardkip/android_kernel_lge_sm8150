@@ -29,6 +29,40 @@ menuconfig PM_DEVFREQ
 
 if PM_DEVFREQ
 
+config DEVFREQ_BOOST
+	bool "Input-triggered devfreq boosting"
+	help
+	  Boost registered devfreq devices (e.g. the GPU and its bus) to a
+	  high frequency floor for a short window on touch input, then hand
+	  control back to the normal governor. This is the devfreq analogue
+	  of the CPU input boost and reduces stutter caused by the GPU having
+	  to ramp back up after idling between frames.
+
+	  If unsure, say N.
+
+config DEVFREQ_INPUT_BOOST_DURATION_MS
+	int "Input boost duration in milliseconds"
+	depends on DEVFREQ_BOOST
+	default 64
+	help
+	  How long the boost floor is held after the last input event.
+
+config DEVFREQ_GPU_INPUT_BOOST_FREQ
+	int "GPU input boost frequency floor (Hz, 0 = max)"
+	depends on DEVFREQ_BOOST
+	default 0
+	help
+	  Frequency floor in Hz applied to the GPU devfreq device while
+	  boosted. 0 boosts to the device's maximum frequency.
+
+config DEVFREQ_GPU_BW_INPUT_BOOST_FREQ
+	int "GPU bus input boost frequency floor (Hz, 0 = max)"
+	depends on DEVFREQ_BOOST
+	default 0
+	help
+	  Frequency floor in Hz applied to the GPU bus (bandwidth) devfreq
+	  device while boosted. 0 boosts to the device's maximum frequency.
+
 comment "DEVFREQ Governors"
 
 config DEVFREQ_GOV_SIMPLE_ONDEMAND
