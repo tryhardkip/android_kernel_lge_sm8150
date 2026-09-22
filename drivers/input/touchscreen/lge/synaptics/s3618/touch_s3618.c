@@ -812,7 +812,7 @@ static int s3618_report_abs(struct device *dev)
 	ts->intr_status = TOUCH_IRQ_FINGER;
 
 	if (ts->old_mask != ts->new_mask) {
-		TOUCH_I("POWER_IM[%d], NSM_STATE[%d], BASELINE[%d]",
+		TOUCH_D(NOISE, "POWER_IM[%d], NSM_STATE[%d], BASELINE[%d]",
 				d->touch_info.power_im,
 				d->touch_info.nsm_state,
 				d->touch_info.baseline_err_log);
