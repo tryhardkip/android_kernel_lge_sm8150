@@ -487,7 +487,7 @@ config CLEAN_LOW_RATIO
 	int "Default value for vm.clean_low_ratio"
 	depends on SYSCTL
 	range 0 100
-	default 0
+	default 20
 	help
 	  This option sets the default value for vm.clean_low_ratio sysctl knob.
 
