@@ -8163,6 +8163,9 @@ cpu_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 }
 
 /* Expose task group only after completing cgroup initialization */
+#ifdef CONFIG_UCLAMP_ASSIST
+static void uclamp_assist_apply(struct cgroup_subsys_state *css);
+#endif
 static int cpu_cgroup_css_online(struct cgroup_subsys_state *css)
 {
 	struct task_group *tg = css_tg(css);
@@ -8173,7 +8176,13 @@ static int cpu_cgroup_css_online(struct cgroup_subsys_state *css)
 
 #ifdef CONFIG_UCLAMP_TASK_GROUP
 	/* Propagate the effective uclamp value for the new group */
+#ifdef CONFIG_UCLAMP_ASSIST
+	static_branch_enable(&sched_uclamp_used);
+#endif
 	mutex_lock(&uclamp_mutex);
+#ifdef CONFIG_UCLAMP_ASSIST
+	uclamp_assist_apply(css);
+#endif
 	rcu_read_lock();
 	cpu_util_update_eff(css);
 	rcu_read_unlock();
@@ -8472,50 +8481,76 @@ static u64 cpu_uclamp_boost_read_u64(struct cgroup_subsys_state *css,
 	return (u64) tg->boosted;
 }
 
-/* Wrappers for the above {read, write, show} functions */
-int cpu_uclamp_min_show_wrapper(struct seq_file *sf, void *v)
+#ifdef CONFIG_UCLAMP_ASSIST
+/*
+ * Apply in-kernel default uclamp settings to well-known Android task groups
+ * as they come online. This runs on the CPU controller's own task_group
+ * (correct css type), unlike the old cpuset-based hack which reinterpreted a
+ * struct cpuset as a struct task_group and corrupted memory.
+ *
+ * Called from cpu_cgroup_css_online() with uclamp_mutex held.
+ */
+struct uclamp_assist_param {
+	const char	*name;
+	unsigned int	min_pct;	/* UCLAMP_MIN, percent (0..100) */
+	int		max_pct;	/* UCLAMP_MAX, percent, -1 means "max" */
+	unsigned int	latency_sensitive;
+	unsigned int	boosted;
+};
+
+static unsigned int uclamp_pct_to_util(unsigned int pct)
 {
-	return cpu_uclamp_min_show(sf, v);
-}
-int cpu_uclamp_max_show_wrapper(struct seq_file *sf, void *v)
-{
-	return cpu_uclamp_max_show(sf, v);
+	return DIV_ROUND_CLOSEST(pct * SCHED_CAPACITY_SCALE, 100);
 }
 
-ssize_t cpu_uclamp_min_write_wrapper(struct kernfs_open_file *of,
-                               char *buf, size_t nbytes,
-                               loff_t off)
+static void uclamp_assist_apply(struct cgroup_subsys_state *css)
 {
-	return cpu_uclamp_min_write(of, buf, nbytes, off);
-}
-ssize_t cpu_uclamp_max_write_wrapper(struct kernfs_open_file *of,
-                               char *buf, size_t nbytes,
-                               loff_t off)
-{
-	return cpu_uclamp_max_write(of, buf, nbytes, off);
-}
+	static const struct uclamp_assist_param tgts[] = {
+		{ "top-app",           10,  -1, 1, 1 },  /* 10-100% */
+		{ "foreground",        10,  80, 1, 0 },  /* 10-80%  */
+		{ "background",         0,  50, 0, 0 },  /* 0-50%   */
+		{ "system-background",  0,  60, 0, 0 },  /* 0-60%   */
+		{ "restricted",         0,  20, 0, 0 },  /* 0-20%   */
+		{ "camera-daemon",     10,  -1, 1, 1 },  /* 10-100% */
+	};
+	char name_buf[NAME_MAX + 1];
+	struct task_group *tg = css_tg(css);
+	int i;
 
-int cpu_uclamp_ls_write_u64_wrapper(struct cgroup_subsys_state *css,
-                              struct cftype *cftype, u64 ls)
-{
-	return cpu_uclamp_ls_write_u64(css, cftype, ls);
-}
-u64 cpu_uclamp_ls_read_u64_wrapper(struct cgroup_subsys_state *css,
-                             struct cftype *cft)
-{
-	return cpu_uclamp_ls_read_u64(css, cft);
-}
+	if (!css->cgroup)
+		return;
 
-int cpu_uclamp_boost_write_u64_wrapper(struct cgroup_subsys_state *css,
-                              struct cftype *cftype, u64 boost)
-{
-	return cpu_uclamp_boost_write_u64(css, cftype, boost);
+	cgroup_name(css->cgroup, name_buf, sizeof(name_buf));
+
+	for (i = 0; i < ARRAY_SIZE(tgts); i++) {
+		const struct uclamp_assist_param *t = &tgts[i];
+		unsigned int min_util, max_util;
+
+		if (strcmp(name_buf, t->name))
+			continue;
+
+		min_util = uclamp_pct_to_util(t->min_pct);
+		max_util = (t->max_pct < 0) ? SCHED_CAPACITY_SCALE
+					    : uclamp_pct_to_util(t->max_pct);
+
+		uclamp_se_set(&tg->uclamp_req[UCLAMP_MIN], min_util, false);
+		tg->uclamp_pct[UCLAMP_MIN] = t->min_pct * POW10(UCLAMP_PERCENT_SHIFT);
+
+		uclamp_se_set(&tg->uclamp_req[UCLAMP_MAX], max_util, false);
+		tg->uclamp_pct[UCLAMP_MAX] = (t->max_pct < 0 ? 100 : t->max_pct)
+					   * POW10(UCLAMP_PERCENT_SHIFT);
+
+		tg->latency_sensitive = t->latency_sensitive;
+		tg->boosted = t->boosted;
+
+		pr_info("uclamp_assist: %s uclamp=[%u%%, %s] latency_sensitive=%u boosted=%u\n",
+			t->name, t->min_pct,
+			t->max_pct < 0 ? "max" : "limited",
+			t->latency_sensitive, t->boosted);
+		break;
+	}
 }
-u64 cpu_uclamp_boost_read_u64_wrapper(struct cgroup_subsys_state *css,
-                             struct cftype *cft)
-{
-	return cpu_uclamp_boost_read_u64(css, cft);
-}
+#endif /* CONFIG_UCLAMP_ASSIST */
 #endif /* CONFIG_UCLAMP_TASK_GROUP */
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -8813,6 +8848,32 @@ static u64 cpu_rt_period_read_uint(struct cgroup_subsys_state *css,
 #endif /* CONFIG_RT_GROUP_SCHED */
 
 static struct cftype cpu_files[] = {
+#ifdef CONFIG_UCLAMP_TASK_GROUP
+	{
+		.name = "uclamp.min",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = cpu_uclamp_min_show,
+		.write = cpu_uclamp_min_write,
+	},
+	{
+		.name = "uclamp.max",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = cpu_uclamp_max_show,
+		.write = cpu_uclamp_max_write,
+	},
+	{
+		.name = "uclamp.latency_sensitive",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_u64 = cpu_uclamp_ls_read_u64,
+		.write_u64 = cpu_uclamp_ls_write_u64,
+	},
+	{
+		.name = "uclamp.boosted",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_u64 = cpu_uclamp_boost_read_u64,
+		.write_u64 = cpu_uclamp_boost_write_u64,
+	},
+#endif
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	{
 		.name = "shares",
