@@ -50,10 +50,16 @@ config DEVFREQ_INPUT_BOOST_DURATION_MS
 config DEVFREQ_GPU_INPUT_BOOST_FREQ
 	int "GPU input boost frequency floor (Hz, 0 = max)"
 	depends on DEVFREQ_BOOST
-	default 0
+	default 427000000
 	help
 	  Frequency floor in Hz applied to the GPU devfreq device while
 	  boosted. 0 boosts to the device's maximum frequency.
+
+	  Default is tuned for the Adreno 640 (Snapdragon 855). Its OPP
+	  table is 257 / 345 / 427 / 499.2 / 585 MHz; 427 MHz is a mid-high
+	  floor that removes ramp latency on touch while still leaving the
+	  governor room to scale up to 585 MHz or back down. Set 585000000
+	  for a max-clock floor, or 0 for the same via the "max" sentinel.
 
 config DEVFREQ_GPU_BW_INPUT_BOOST_FREQ
 	int "GPU bus input boost frequency floor (Hz, 0 = max)"
