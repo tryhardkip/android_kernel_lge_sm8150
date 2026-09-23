@@ -6820,11 +6820,6 @@ next_cpu:
 	return 0;
 }
 
-static inline bool cpu_in_sg(struct sched_group *sg, int cpu)
-{
-	return cpu != -1 && cpumask_test_cpu(cpu, sched_group_span(sg));
-}
-
 #ifdef DEBUG_EENV_DECISIONS
 static void dump_eenv_debug(struct energy_env *eenv)
 {
