@@ -50,6 +50,7 @@ CONFIG_SCHED_TUNE_DUMMY=y
 # CONFIG_CPU_IDLE_GOV_LADDER is not set
 # CONFIG_CPU_IDLE_GOV_MENU is not set
 CONFIG_CPU_IDLE_GOV_TEO=y
+CONFIG_CPU_IDLE_GOV_NAP=y
 
 #Lru
 CONFIG_LRU_GEN=y
@@ -499,7 +500,7 @@ CONFIG_BBK_ET713=y
 # CONFIG_VT is not set
 # CONFIG_LEGACY_PTYS is not set
 # CONFIG_DEVMEM is not set
-CONFIG_CMDLINE="earlycon=msm_geni_serial,0xa90000 keep_bootcon console=ttyMSM0,115200n8 loglevel=8"
+CONFIG_CMDLINE="earlycon=msm_geni_serial,0xa90000 keep_bootcon console=ttyMSM0,115200n8 loglevel=8 cpuidle.governor=nap"
 CONFIG_CMDLINE_EXTEND=y
 CONFIG_SERIAL_MSM_GENI=y
 CONFIG_SERIAL_MSM_GENI_CONSOLE=y

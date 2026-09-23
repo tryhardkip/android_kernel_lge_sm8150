@@ -502,7 +502,34 @@ static int lpm_cpuidle_select(struct cpuidle_driver *drv,
 static int lpm_cpuidle_enter(struct cpuidle_device *dev,
 		struct cpuidle_driver *drv, int idx)
 {
-	wfi();
+	struct lpm_cpu *cpu = per_cpu(cpu_lpm, dev->cpu);
+	const struct cpumask *cpumask = get_cpu_mask(dev->cpu);
+	int64_t start_time = ktime_to_ns(ktime_get()), end_time;
+	bool success;
+
+	/*
+	 * The governor picked @idx purely from residency/latency; honor the
+	 * qcom per-CPU mode policy (sysfs disable, isolation, etc.) by clamping
+	 * down to the deepest currently-allowed level before entering.
+	 */
+	while (idx > 0 && !lpm_cpu_mode_allow(dev->cpu, idx, true))
+		idx--;
+
+	/*
+	 * Enter the governor-selected LPM level for real: prepare the CPU and
+	 * its cluster, drop into the PSCI power-collapse state (idx 0 is plain
+	 * cpu_do_idle() inside psci_enter_sleep()), then unwind.  This restores
+	 * runtime deep idle so cpuidle governors actually take effect.
+	 */
+	cpu_prepare(cpu, idx, true);
+	cluster_prepare(cpu->parent, cpumask, idx, true, start_time);
+
+	success = psci_enter_sleep(cpu, idx, true);
+
+	end_time = ktime_to_ns(ktime_get());
+	cluster_unprepare(cpu->parent, cpumask, idx, true, end_time, success);
+	cpu_unprepare(cpu, idx, true);
+
 	return idx;
 }
 
@@ -614,7 +641,7 @@ static int cluster_cpuidle_register(struct lpm_cluster *cl)
 					cpu_level->name);
 			st->flags = 0;
 			st->exit_latency = cpu_level->pwr.exit_latency;
-			st->target_residency = 0;
+			st->target_residency = cpu_level->pwr.min_residency;
 			st->enter = lpm_cpuidle_enter;
 			if (i == lpm_cpu->nlevels - 1)
 				st->enter_s2idle = lpm_cpuidle_s2idle;
