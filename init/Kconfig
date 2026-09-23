@@ -1176,6 +1176,21 @@ config SCHED_BORE
 
 	  If unsure, say Y here.
 
+config SCHED_EEVDF
+	bool "EEVDF scheduling policy (staged backport)"
+	default n
+	help
+	  Staged backport of the Earliest Eligible Virtual Deadline First
+	  (EEVDF) scheduler onto this CFS-based tree.
+
+	  When disabled (default) the classic CFS pick/placement logic is
+	  used and this option has no effect. When enabled, the fair class
+	  maintains EEVDF virtual-time accounting (avg_vruntime / avg_load)
+	  and, once fully wired, selects tasks by virtual deadline and
+	  eligibility instead of pure vruntime.
+
+	  This is an in-progress backport. If unsure, say N here.
+
 config SCHED_AUTOGROUP
 	bool "Automatic process group scheduling"
 	select CGROUPS
