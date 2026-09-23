@@ -115,6 +115,22 @@ extern unsigned int sysctl_nr_open_min, sysctl_nr_open_max;
 extern int sysctl_nr_trim_pages;
 #endif
 
+/*
+ * proc_dopipe_max_size is defined in the CONFIG_PROC_SYSCTL block below.
+ * It is needed by the fs_table[] sysctl entry even when PROC_SYSCTL is
+ * disabled, so provide a forward declaration plus a stub fallback.
+ */
+#ifdef CONFIG_PROC_SYSCTL
+int proc_dopipe_max_size(struct ctl_table *table, int write,
+			 void *buffer, size_t *lenp, loff_t *ppos);
+#elif defined(CONFIG_SYSCTL)
+static int proc_dopipe_max_size(struct ctl_table *table, int write,
+				void *buffer, size_t *lenp, loff_t *ppos)
+{
+	return -ENOSYS;
+}
+#endif
+
 /* Constants used for minimum and  maximum */
 #ifdef CONFIG_LOCKUP_DETECTOR
 static int sixty = 60;
@@ -2331,7 +2347,7 @@ static struct ctl_table fs_table[] = {
 		.data		= &pipe_max_size,
 		.maxlen		= sizeof(pipe_max_size),
 		.mode		= 0644,
-		.proc_handler	= &pipe_proc_fn,
+		.proc_handler	= proc_dopipe_max_size,
 		.extra1		= &pipe_min_size,
 	},
 	{
@@ -3192,8 +3208,8 @@ static int do_proc_dopipe_max_size_conv(unsigned long *lvalp,
 	return 0;
 }
 
-static int proc_dopipe_max_size(struct ctl_table *table, int write,
-				void *buffer, size_t *lenp, loff_t *ppos)
+int proc_dopipe_max_size(struct ctl_table *table, int write,
+			 void *buffer, size_t *lenp, loff_t *ppos)
 {
 	return do_proc_douintvec(table, write, buffer, lenp, ppos,
 				 do_proc_dopipe_max_size_conv, NULL);
