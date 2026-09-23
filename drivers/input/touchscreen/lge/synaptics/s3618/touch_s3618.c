@@ -4259,13 +4259,15 @@ static ssize_t store_longpress(struct device *dev,
 		Construct parameters based on what LPWG_UPDATE_ALL sets in s3618_lpwg().
 		We need these to be what is currently set in order to not break other things, i.e. double tap.
 	*/
-	int lpwg_param[4] = {
-		ts->lpwg.mode,
-		ts->lpwg.screen,
-		ts->lpwg.sensor,
-		ts->lpwg.qcover
-	};
-	ret = s3618_lpwg(dev, LPWG_UPDATE_ALL, lpwg_param);
+	{
+		int lpwg_param[4] = {
+			ts->lpwg.mode,
+			ts->lpwg.screen,
+			ts->lpwg.sensor,
+			ts->lpwg.qcover
+		};
+		ret = s3618_lpwg(dev, LPWG_UPDATE_ALL, lpwg_param);
+	}
 	if (ret < 0) {
 		TOUCH_E("s3618_lpwg() failed (ret: %d)\n", ret);
 		mutex_unlock(&ts->lock);

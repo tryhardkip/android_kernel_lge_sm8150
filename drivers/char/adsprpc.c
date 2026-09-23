@@ -2477,7 +2477,6 @@ static int fastrpc_get_info_from_dsp(struct fastrpc_file *fl,
 	int err = 0, dsp_support = 0;
 	struct fastrpc_ioctl_invoke_crc ioctl;
 	remote_arg_t ra[2];
-	struct fastrpc_apps *me = &gfa;
 	struct kstat sb;
 
 	// Querying device about DSP support
