@@ -3031,7 +3031,7 @@ static int smack_sem_alloc_security(struct kern_ipc_perm *sma)
  *
  * Clears the blob pointer
  */
-static void smack_sem_free_security(struct kern_ipc_perm *sma)
+static void __maybe_unused smack_sem_free_security(struct kern_ipc_perm *sma)
 {
 	struct kern_ipc_perm *isp = sma;
 

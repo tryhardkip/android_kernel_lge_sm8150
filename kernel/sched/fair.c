@@ -239,10 +239,14 @@ static inline u32 calc_burst_penalty(u64 burst_time) {
 }
 
 static void update_burst_score(struct sched_entity *se) {
+	struct task_struct *p;
+	u8 prio, prev_prio, new_prio;
+
 	if (!entity_is_task(se)) return;
-	struct task_struct *p = task_of(se);
-	u8 prio = p->static_prio - MAX_RT_PRIO;
-	u8 prev_prio = min(39, prio + se->burst_score);
+
+	p = task_of(se);
+	prio = p->static_prio - MAX_RT_PRIO;
+	prev_prio = min(39, prio + se->burst_score);
 
 	/*
 	 * When BORE is disabled at runtime, force the burst score back to 0
@@ -252,7 +256,7 @@ static void update_burst_score(struct sched_entity *se) {
 	 */
 	se->burst_score = sched_bore ? (se->burst_penalty >> 2) : 0;
 
-	u8 new_prio = min(39, prio + se->burst_score);
+	new_prio = min(39, prio + se->burst_score);
 	if (new_prio != prev_prio)
 	 	reweight_task(p, new_prio);
 }
@@ -4382,7 +4386,6 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 		 * to improve scheduling decisions.
 		 */
 		if (sysctl_sched_pelt_fast_decay && entity_is_task(se)) {
-			struct task_struct *p = task_of(se);
 			u64 sleep_time;
 
 			sleep_time = rq_clock_task(rq_of(cfs_rq)) - se->exec_start;
@@ -5644,12 +5647,6 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
 	int task_new = !(flags & ENQUEUE_WAKEUP);
-	bool prefer_idle = sched_feat(EAS_PREFER_IDLE) ?
-#ifdef CONFIG_SCHED_TUNE
-				(schedtune_prefer_idle(p) > 0) : 0;
-#elif  CONFIG_UCLAMP_TASK
-				(uclamp_latency_sensitive(p) > 0) : 0;
-#endif
 
 #ifdef CONFIG_SCHED_WALT
 	p->misfit = !task_fits_max(p, rq->cpu);
@@ -5698,13 +5695,15 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		uclamp_reset_ignore_uclamp_max(p);
 
 #ifdef CONFIG_SCHED_BORE
-	int task_sleep = flags & DEQUEUE_SLEEP;
-	
-	if (task_sleep) {
-		cfs_rq = cfs_rq_of(se);
-		if (cfs_rq->curr == se)
-			update_curr(cfs_rq);
-		restart_burst(se);
+	{
+		int task_sleep = flags & DEQUEUE_SLEEP;
+
+		if (task_sleep) {
+			cfs_rq = cfs_rq_of(se);
+			if (cfs_rq->curr == se)
+				update_curr(cfs_rq);
+			restart_burst(se);
+		}
 	}
 #endif // CONFIG_SCHED_BORE
 
