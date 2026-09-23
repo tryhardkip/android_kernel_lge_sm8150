@@ -3026,19 +3026,6 @@ static int smack_sem_alloc_security(struct kern_ipc_perm *sma)
 }
 
 /**
- * smack_sem_free_security - Clear the security blob for sem
- * @sma: the object
- *
- * Clears the blob pointer
- */
-static void __maybe_unused smack_sem_free_security(struct kern_ipc_perm *sma)
-{
-	struct kern_ipc_perm *isp = sma;
-
-	isp->security = NULL;
-}
-
-/**
  * smk_curacc_sem : check if current has access on sem
  * @sma : the object
  * @access : access requested
