@@ -6,6 +6,23 @@
  */
 SCHED_FEAT(GENTLE_FAIR_SLEEPERS, true)
 
+#ifdef CONFIG_SCHED_EEVDF
+/*
+ * Using the avg_vruntime, do the right thing and preserve lag across
+ * sleep+wake cycles. EEVDF placement (staged backport).
+ */
+SCHED_FEAT(PLACE_LAG, true)
+/*
+ * Give new tasks half a slice to ease into things.
+ */
+SCHED_FEAT(PLACE_DEADLINE_INITIAL, true)
+/*
+ * Inhibit (wakeup) preemption until the current task has either matched the
+ * 0-lag point or until it has exhausted its slice.
+ */
+SCHED_FEAT(RUN_TO_PARITY, true)
+#endif /* CONFIG_SCHED_EEVDF */
+
 /*
  * Place new tasks ahead so that they do not starve already running
  * tasks

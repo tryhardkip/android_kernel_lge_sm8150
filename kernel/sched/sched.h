@@ -512,6 +512,11 @@ struct cfs_rq {
 
 	u64 exec_clock;
 	u64 min_vruntime;
+#ifdef CONFIG_SCHED_EEVDF
+	/* EEVDF weighted virtual-time accounting (staged backport) */
+	s64 avg_vruntime;
+	u64 avg_load;
+#endif /* CONFIG_SCHED_EEVDF */
 #ifndef CONFIG_64BIT
 	u64 min_vruntime_copy;
 #endif

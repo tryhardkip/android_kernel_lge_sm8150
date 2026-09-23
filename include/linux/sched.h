@@ -524,6 +524,14 @@ struct sched_entity {
 	u64				sum_exec_runtime;
 	u64				vruntime;
 	u64				prev_sum_exec_runtime;
+#ifdef CONFIG_SCHED_EEVDF
+	/* EEVDF virtual-time scheduling state (staged backport) */
+	s64				vlag;
+	u64				slice;
+	u64				deadline;
+	/* Augmented rbtree: min virtual deadline of this entity's subtree */
+	u64				min_deadline;
+#endif /* CONFIG_SCHED_EEVDF */
 #ifdef CONFIG_SCHED_BORE
 	u64				burst_time;
 	u8				prev_burst_penalty;

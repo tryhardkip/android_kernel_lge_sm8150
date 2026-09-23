@@ -24,6 +24,9 @@ enum { sysctl_hung_task_timeout_secs = 0 };
 #define MAX_MARGIN_LEVELS (MAX_CLUSTERS - 1)
 
 extern unsigned int sysctl_sched_latency;
+#ifdef CONFIG_SCHED_EEVDF
+extern unsigned int sysctl_sched_base_slice;
+#endif
 extern unsigned int sysctl_sched_min_granularity;
 extern unsigned int sysctl_sched_sync_hint_enable;
 extern unsigned int sysctl_sched_cstate_aware;
