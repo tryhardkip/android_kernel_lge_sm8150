@@ -45,6 +45,10 @@
 #include "../workqueue_internal.h"
 #include "../smpboot.h"
 
+#ifdef CONFIG_SCHED_BORE
+#include <linux/sched/bore.h>
+#endif /* CONFIG_SCHED_BORE */
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
 
@@ -3049,10 +3053,6 @@ int wake_up_state(struct task_struct *p, unsigned int state)
 	return try_to_wake_up(p, state, 0, 1);
 }
 
-#ifdef CONFIG_SCHED_BORE
-#include <linux/sched/bore.h>
-#endif /* CONFIG_SCHED_BORE */
-
 /*
  * Perform scheduler related setup for a newly forked process p.
  * p is forked by current.
@@ -3075,9 +3075,13 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->boost_period         = 0;
 
 	#ifdef CONFIG_SCHED_BORE
-	/* Reset BORE burst fields for newly forked task */
-	if (entity_is_task(&p->se))
-		reset_task_bore(p);
+	/* Reset BORE burst fields for newly forked task.
+	 * task_struct::se is always a task entity (group entities live in
+	 * struct task_group), so the mainline entity_is_task() guard is
+	 * always true here; call reset_task_bore() directly since
+	 * entity_is_task() is private to fair.c on this tree.
+	 */
+	reset_task_bore(p);
 	#endif // CONFIG_SCHED_BORE
 
 	INIT_LIST_HEAD(&p->se.group_node);

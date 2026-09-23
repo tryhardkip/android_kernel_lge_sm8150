@@ -69,5 +69,6 @@ extern void sched_bore_update_protect_slice_lv(void);
 
 extern void reweight_entity(
 	struct cfs_rq *cfs_rq, struct sched_entity *se, unsigned long weight);
+extern struct cfs_rq *bore_cfs_rq_of(struct sched_entity *se);
 
 #endif /* _KERNEL_SCHED_BORE_H */
