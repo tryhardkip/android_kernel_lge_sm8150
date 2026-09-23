@@ -106,6 +106,18 @@ int cpuidle_governor_latency_req(unsigned int cpu)
 	struct device *device = get_cpu_device(cpu);
 	int device_req = dev_pm_qos_raw_read_value(device);
 
+	/*
+	 * On this tree PM_QOS_RESUME_LATENCY_DEFAULT_VALUE is 0, so a CPU
+	 * device with no per-device resume-latency constraint (the common
+	 * case) reports device_req == 0.  Taken as a hard 0 us budget it wins
+	 * the min() below unconditionally and forbids every C-state with a
+	 * non-zero exit latency, pinning cpuidle to state 0 forever.  Treat
+	 * the unset default as "no per-device constraint" and fall back to the
+	 * global PM_QOS_CPU_DMA_LATENCY request, which drivers still honour.
+	 */
+	if (device_req <= 0)
+		device_req = PM_QOS_LATENCY_ANY;
+
 	return device_req < global_req ? device_req : global_req;
 }
 EXPORT_SYMBOL_GPL(cpuidle_governor_latency_req);
