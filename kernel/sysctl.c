@@ -147,11 +147,11 @@ extern uint sched_burst_cache_lifetime;
 extern int  sysctl_sched_min_base_slice;
 extern uint sysctl_sched_base_slice;
 
-extern int sched_bore_update_handler(const struct ctl_table *table,
+extern int sched_bore_update_handler(struct ctl_table *table,
 		int write, void __user *buffer, size_t *lenp, loff_t *ppos);
-extern int sched_burst_inherit_type_update_handler(const struct ctl_table *table,
+extern int sched_burst_inherit_type_update_handler(struct ctl_table *table,
 		int write, void __user *buffer, size_t *lenp, loff_t *ppos);
-extern int sched_burst_protect_slice_lv_update_handler(const struct ctl_table *table,
+extern int sched_burst_protect_slice_lv_update_handler(struct ctl_table *table,
 		int write, void __user *buffer, size_t *lenp, loff_t *ppos);
 
 static int __maybe_unused sixty_four     = 64;
@@ -3196,7 +3196,7 @@ int proc_douintvec_minmax(struct ctl_table *table, int write,
  *
  * Returns 0 on success or an error on write when the range check fails.
  */
-int proc_dou8vec_minmax(const struct ctl_table *table, int write,
+int proc_dou8vec_minmax(struct ctl_table *table, int write,
 			void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	struct ctl_table tmp;
@@ -3774,7 +3774,7 @@ int proc_douintvec_minmax(struct ctl_table *table, int write,
 	return -ENOSYS;
 }
 
-int proc_dou8vec_minmax(const struct ctl_table *table, int write,
+int proc_dou8vec_minmax(struct ctl_table *table, int write,
 			void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	return -ENOSYS;
