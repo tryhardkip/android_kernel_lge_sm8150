@@ -64,6 +64,7 @@
 #include <linux/sched/rt.h>
 #include <linux/sched/wake_q.h>
 #include <linux/sched/mm.h>
+#include <linux/sched/bore.h>
 #include <linux/hugetlb.h>
 #include <linux/freezer.h>
 #include <linux/bootmem.h>
@@ -1579,6 +1580,9 @@ static void mark_wake_futex(struct wake_q_head *wake_q, struct futex_q *q)
 	 * the hb->lock. wake_q_add() grabs reference to p.
 	 */
 	wake_q_add(wake_q, p);
+#ifdef CONFIG_SCHED_BORE
+	p->se.bore_futex_waiting = false;
+#endif
 	put_task_struct(p);
 }
 
@@ -2859,7 +2863,13 @@ retry:
 		goto out;
 
 	/* queue_me and wait for wakeup, timeout, or a signal. */
+#ifdef CONFIG_SCHED_BORE
+	current->se.bore_futex_waiting = true;
+#endif
 	futex_wait_queue_me(hb, &q, to);
+#ifdef CONFIG_SCHED_BORE
+	current->se.bore_futex_waiting = false;
+#endif
 
 	/* If we were woken (and unqueued), we succeeded, whatever. */
 	ret = 0;

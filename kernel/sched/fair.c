@@ -222,78 +222,8 @@ static inline struct task_struct *task_of(struct sched_entity *se)
 }
 
 #ifdef CONFIG_SCHED_BORE
-uint __read_mostly sched_bore                   = 1;
-uint __read_mostly sched_burst_smoothness_long  = 1;
-uint __read_mostly sched_burst_smoothness_short = 0;
-uint __read_mostly sched_burst_fork_atavistic   = 2;
-uint __read_mostly sched_burst_penalty_offset   = 22;
-uint __read_mostly sched_burst_penalty_scale    = 1280;
-uint __read_mostly sched_burst_cache_lifetime   = 60000000;
-
-#define MAX_BURST_PENALTY (39U <<2)
-
-static inline u32 log2plus1_u64_u32f8(u64 v) {
-	u32 msb = fls64(v);
-	s32 excess_bits = msb - 9;
-    u8 fractional = (0 <= excess_bits)? v >> excess_bits: v << -excess_bits;
-	return msb << 8 | fractional;
-}
-
-static inline u32 calc_burst_penalty(u64 burst_time) {
-	u32 greed, tolerance, penalty, scaled_penalty;
-	
-	greed = log2plus1_u64_u32f8(burst_time);
-	tolerance = sched_burst_penalty_offset << 8;
-	penalty = max(0, (s32)greed - (s32)tolerance);
-	scaled_penalty = penalty * sched_burst_penalty_scale >> 16;
-
-	return min(MAX_BURST_PENALTY, scaled_penalty);
-}
-
-static void update_burst_score(struct sched_entity *se) {
-	struct task_struct *p;
-	u8 prio, prev_prio, new_prio;
-
-	if (!entity_is_task(se)) return;
-
-	p = task_of(se);
-	prio = p->static_prio - MAX_RT_PRIO;
-	prev_prio = min(39, prio + se->burst_score);
-
-	/*
-	 * When BORE is disabled at runtime, force the burst score back to 0
-	 * so reweight_task() restores the task's nominal priority. Doing this
-	 * unconditionally here lets a toggle to 0 self-heal already-penalised
-	 * tasks on their next update_curr().
-	 */
-	se->burst_score = sched_bore ? (se->burst_penalty >> 2) : 0;
-
-	new_prio = min(39, prio + se->burst_score);
-	if (new_prio != prev_prio)
-	 	reweight_task(p, new_prio);
-}
-
-static void update_burst_penalty(struct sched_entity *se) {
-	se->curr_burst_penalty = calc_burst_penalty(se->burst_time);
-	se->burst_penalty = max(se->prev_burst_penalty, se->curr_burst_penalty);
-	update_burst_score(se);
-}
-
-static inline u32 binary_smooth(u32 new, u32 old) {
-  int increment = new - old;
-  return (0 <= increment)?
-    old + ( increment >> (int)sched_burst_smoothness_long):
-    old - (-increment >> (int)sched_burst_smoothness_short);
-}
-
-static void restart_burst(struct sched_entity *se) {
-	se->burst_penalty = se->prev_burst_penalty =
-		binary_smooth(se->curr_burst_penalty, se->prev_burst_penalty);
-	se->curr_burst_penalty = 0;
-	se->burst_time = 0;
-	update_burst_score(se);
-}
-#endif // CONFIG_SCHED_BORE
+#include <linux/sched/bore.h>
+#endif /* CONFIG_SCHED_BORE */
 
 #ifdef CONFIG_SMP
 /*
@@ -894,6 +824,52 @@ static void update_min_vruntime(struct cfs_rq *cfs_rq)
 }
 
 /*
+ * BORE 6.8.0: preemption helpers used by check_preempt_wakeup() and
+ * pick_eevdf().  These need entity_eligible/cfs_rq_of/entity_before.
+ */
+#ifdef CONFIG_SCHED_BORE
+static inline bool do_preempt_weight(struct cfs_rq *cfs_rq,
+				     struct sched_entity *pse,
+				     struct sched_entity *se)
+{
+	if (!sched_feat(RUN_TO_PARITY))
+		return false;
+
+	if (!static_branch_likely(&sched_burst_protect_slice_cond_key))
+		return false;
+
+	if (static_branch_unlikely(&sched_burst_protect_slice_prefer_key)
+			? (pse->load.weight <= se->load.weight)
+			: (pse->load.weight <  se->load.weight))
+		return false;
+
+	if (!entity_eligible(cfs_rq, pse))
+		return false;
+
+	if (entity_before(pse, se))
+		return true;
+
+	if (!entity_eligible(cfs_rq, se))
+		return true;
+
+	return false;
+}
+
+static inline bool protect_slice(struct sched_entity *se)
+{
+	if (se && entity_is_task(se)) {
+		struct task_struct *p = task_of(se);
+		if (p->se.bore_futex_waiting)
+			return false;
+	}
+	return sched_feat(RUN_TO_PARITY) &&
+	       se &&
+	       ((s64)(se->vruntime - se->deadline) < 0) &&
+	       !entity_eligible(cfs_rq_of(se), se);
+}
+#endif /* CONFIG_SCHED_BORE */
+
+/*
  * Enqueue an entity into the rb-tree:
  */
 static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
@@ -999,6 +975,10 @@ int sched_proc_update_handler(struct ctl_table *table, int write,
 	WRT_SYSCTL(sched_latency);
 	WRT_SYSCTL(sched_wakeup_granularity);
 #undef WRT_SYSCTL
+
+#ifdef CONFIG_SCHED_BORE
+	sched_update_min_base_slice();
+#endif
 
 	return 0;
 }
@@ -1125,8 +1105,12 @@ static struct sched_entity *pick_eevdf(struct cfs_rq *cfs_rq,
 	 * (deadline) or blocks; this reduces overscheduling.
 	 */
 	if (sched_feat(RUN_TO_PARITY) && curr &&
-	    (s64)(curr->vruntime - curr->deadline) < 0)
-		return curr;
+	    (s64)(curr->vruntime - curr->deadline) < 0) {
+#ifdef CONFIG_SCHED_BORE
+		if (!protect_slice(curr))
+#endif /* CONFIG_SCHED_BORE */
+			return curr;
+	}
 
 	while (node) {
 		struct sched_entity *se = __node_2_se(node);
@@ -1342,15 +1326,15 @@ static void update_curr(struct cfs_rq *cfs_rq)
 	schedstat_add(cfs_rq->exec_clock, delta_exec);
 
 #ifdef CONFIG_SCHED_BORE
-	curr->burst_time += delta_exec;
-	update_burst_penalty(curr);
-	if (likely(sched_bore))
-		curr->vruntime += max(1ULL, calc_delta_fair(delta_exec, curr));
-	else
-		curr->vruntime += calc_delta_fair(delta_exec, curr);
-#else // !CONFIG_SCHED_BORE
+	if (likely(sched_bore) && entity_is_task(curr)) {
+		struct task_struct *p = task_of(curr);
+
+		update_curr_bore(p, delta_exec);
+		if (!p->se.burst_stop_update)
+			curr->vruntime += max(1ULL, calc_delta_fair(delta_exec, curr));
+	} else
+#endif
 	curr->vruntime += calc_delta_fair(delta_exec, curr);
-#endif // CONFIG_SCHED_BORE
 #ifdef CONFIG_SCHED_EEVDF
 	/* EEVDF: reschedule when the running entity exhausts its slice. */
 	if (update_deadline_eevdf(cfs_rq, curr))
@@ -3310,7 +3294,7 @@ static void reweight_eevdf(struct sched_entity *se, u64 avruntime,
 }
 #endif /* CONFIG_SCHED_EEVDF */
 
-static void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
+void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
 			    unsigned long weight)
 {
 #ifdef CONFIG_SCHED_EEVDF
@@ -4662,6 +4646,19 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 	 */
 	if (initial && sched_feat(PLACE_DEADLINE_INITIAL))
 		vslice /= 2;
+
+#ifdef CONFIG_SCHED_BORE
+	/*
+	 * Under BORE, a task that was woken from a futex wait is given
+	 * a halved base slice to avoid overscheduling latency spikes.
+	 */
+	if (se && entity_is_task(se)) {
+		struct task_struct *p = task_of(se);
+		if (p->se.bore_futex_waiting)
+			vslice /= 2;
+		p->se.bore_futex_waiting = false;
+	}
+#endif /* CONFIG_SCHED_BORE */
 
 	se->deadline = se->vruntime + vslice;
 #else
@@ -6177,7 +6174,8 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 			cfs_rq = cfs_rq_of(se);
 			if (cfs_rq->curr == se)
 				update_curr(cfs_rq);
-			restart_burst(se);
+			if (entity_is_task(se))
+				restart_burst_bore(task_of(se));
 		}
 	}
 #endif // CONFIG_SCHED_BORE
@@ -9652,6 +9650,13 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 			set_next_buddy(pse);
 		goto preempt;
 	}
+#ifdef CONFIG_SCHED_BORE
+	if (do_preempt_weight(cfs_rq_of(pse), se, pse)) {
+		if (!next_buddy_marked)
+			set_next_buddy(pse);
+		goto preempt;
+	}
+#endif /* CONFIG_SCHED_BORE */
 #else
 	if (wakeup_preempt_entity(se, pse) == 1) {
 		/*
@@ -9856,8 +9861,9 @@ static void yield_task_fair(struct rq *rq)
 	*/
 	update_curr(cfs_rq);
 
-	#ifdef CONFIG_SCHED_BORE
-		restart_burst(se);
+	#if CONFIG_SCHED_BORE
+		if (entity_is_task(se))
+			restart_burst_bore(task_of(se));
 		if (unlikely(rq->nr_running == 1))
 			return;
 
@@ -13398,7 +13404,13 @@ static void task_fork_fair(struct task_struct *p)
 #endif
 	}
 #ifdef CONFIG_SCHED_BORE
-	update_burst_score(se);
+	/*
+	 * If BORE is enabled, the effective priority (which now
+	 * includes the burst score) will be recomputed by the
+	 * reweight_entity() / update_curr_bore() path during
+	 * update_curr().  We don't need to call the old
+	 * update_burst_score() here anymore.
+	 */
 #endif // CONFIG_SCHED_BORE
 	place_entity(cfs_rq, se, 1);
 

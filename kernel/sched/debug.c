@@ -13,6 +13,7 @@
 #include <linux/proc_fs.h>
 #include <linux/sched/mm.h>
 #include <linux/sched/task.h>
+#include <linux/sched/bore.h>
 #include <linux/seq_file.h>
 #include <linux/kallsyms.h>
 #include <linux/utsname.h>
@@ -553,8 +554,12 @@ print_task(struct seq_file *m, struct rq *rq, struct task_struct *p)
 		SPLIT_NS(schedstat_val_or_zero(p->se.statistics.sum_sleep_runtime)));
 
 #ifdef CONFIG_SCHED_BORE
-	SEQ_printf(m, " %2d", p->se.burst_score);
-#endif // CONFIG_SCHED_BORE
+	SEQ_printf(m, " %2d %4d %4d %6u",
+		bore_score(p),
+		effective_prio_bore(p),
+		p->prio,
+		p->se.burst_penalty);
+#endif /* CONFIG_SCHED_BORE */
 #ifdef CONFIG_NUMA_BALANCING
 	SEQ_printf(m, " %d %d", task_node(p), task_numa_group_id(p));
 #endif
