@@ -39,19 +39,6 @@ static const unsigned int nsecs_per_tick = 1000000000ULL / HZ;
 
 static int __maybe_unused maxval_prio    = 39;
 static int __maybe_unused maxval_6_bits  = 63;
-static int __read_mostly maxval_8_bits   = 255;
-static int __read_mostly maxval_12_bits  = 4095;
-
-/* Constants for sysctl extra1/extra2 ranges */
-static int __read_mostly sysctl_zero  = 0;
-static int __read_mostly sysctl_one   = 1;
-static int __read_mostly sysctl_two   = 2;
-static int __read_mostly sysctl_three = 3;
-
-#define SYSCTL_ZERO (&sysctl_zero)
-#define SYSCTL_ONE  (&sysctl_one)
-#define SYSCTL_TWO  (&sysctl_two)
-#define SYSCTL_THREE (&sysctl_three)
 
 #define MAX_BURST_PENALTY ((40U << 8) - 1)
 #define BURST_CACHE_SAMPLE_LIMIT 63
@@ -70,11 +57,14 @@ DEFINE_STATIC_KEY_FALSE(sched_burst_protect_slice_prefer_key);
  */
 static inline u32 log2p1_u64_u32fp(u64 v, u8 fp)
 {
+	int clz, exponent;
+	u32 mantissa;
+
 	if (unlikely(!v))
 		return 0;
-	int clz = __builtin_clzll(v);
-	int exponent = 64 - clz;
-	u32 mantissa = (u32)((v << clz) << 1 >> (64 - fp));
+	clz = __builtin_clzll(v);
+	exponent = 64 - clz;
+	mantissa = (u32)((v << clz) << 1 >> (64 - fp));
 	return exponent << fp | mantissa;
 }
 
@@ -116,11 +106,13 @@ static inline u32 binary_smooth(u32 new, u32 old)
 
 static void reweight_task_by_prio(struct task_struct *p, int prio)
 {
+	struct sched_entity *se = &p->se;
+	unsigned long weight;
+
 	if (idle_policy(p->policy))
 		return;
 
-	struct sched_entity *se = &p->se;
-	unsigned long weight = scale_load(sched_prio_to_weight[prio]);
+	weight = scale_load(sched_prio_to_weight[prio]);
 
 	if (se->on_rq) {
 		p->se.burst_stop_update = true;
@@ -134,10 +126,12 @@ static void reweight_task_by_prio(struct task_struct *p, int prio)
 u8 effective_prio_bore(struct task_struct *p)
 {
 	int prio = p->static_prio - MAX_RT_PRIO;
+	s32 diff;
+
 	if (static_branch_likely(&sched_bore_key))
 		prio += bore_score(p);
 	prio &= ~(prio >> 31);
-	s32 diff = prio - maxval_prio;
+	diff = prio - maxval_prio;
 	prio -= (diff & ~(diff >> 31));
 	return (u8)prio;
 }
@@ -146,13 +140,14 @@ static void update_penalty(struct task_struct *p)
 {
 	struct sched_entity *se = &p->se;
 	u8  prev_prio = effective_prio_bore(p);
-
 	s32 diff = (s32)se->curr_burst_penalty - (s32)se->prev_burst_penalty;
 	u16 max_val = se->curr_burst_penalty - (diff & (diff >> 31));
 	u32 is_kthread = !!(p->flags & PF_KTHREAD);
+	u8 new_prio;
+
 	se->burst_penalty = max_val & -(s32)(!is_kthread);
 
-	u8 new_prio = effective_prio_bore(p);
+	new_prio = effective_prio_bore(p);
 	if (new_prio != prev_prio)
 		reweight_task_by_prio(p, new_prio);
 }
@@ -160,12 +155,13 @@ static void update_penalty(struct task_struct *p)
 void update_curr_bore(struct task_struct *p, u64 delta_exec)
 {
 	struct sched_entity *se = &p->se;
+	u32 curr_penalty;
 
 	if (se->burst_stop_update)
 		return;
 
 	se->burst_time += delta_exec;
-	u32 curr_penalty = se->curr_burst_penalty = calc_burst_penalty(se->burst_time);
+	curr_penalty = se->curr_burst_penalty = calc_burst_penalty(se->burst_time);
 
 	if (curr_penalty <= se->prev_burst_penalty)
 		return;
@@ -186,10 +182,11 @@ void restart_burst_rescale_deadline_bore(struct task_struct *p)
 {
 	struct sched_entity *se = &p->se;
 	s64 vscaled, vremain = (s64)(se->deadline - se->vruntime);
+	u8 old_prio, new_prio;
 
-	u8 old_prio = effective_prio_bore(p);
+	old_prio = effective_prio_bore(p);
 	restart_burst_bore(p);
-	u8 new_prio = effective_prio_bore(p);
+	new_prio = effective_prio_bore(p);
 
 	if (old_prio > new_prio) {
 		vscaled = (s64)rescale_slice((u64)abs(vremain), old_prio, new_prio);
@@ -241,11 +238,12 @@ static u32 inherit_from_parent(struct task_struct *parent,
 			       unsigned long clone_flags, u64 now)
 {
 	struct bore_bc bc_val;
+	struct bore_bc *bc;
 
 	if (clone_flags & CLONE_PARENT)
 		parent = rcu_dereference(parent->real_parent);
 
-	struct bore_bc *bc = &parent->se.burst_cache_subtree;
+	bc = &parent->se.burst_cache_subtree;
 
 	if (burst_cache_expired(bc, now)) {
 		struct task_struct *child;
@@ -274,6 +272,8 @@ static u32 inherit_from_ancestor_hub(struct task_struct *parent,
 {
 	struct bore_bc bc_val;
 	struct task_struct *ancestor = parent;
+	struct task_struct *next;
+	struct bore_bc *bc;
 	u32 sole_child_count = 0;
 
 	if (clone_flags & CLONE_PARENT) {
@@ -281,24 +281,25 @@ static u32 inherit_from_ancestor_hub(struct task_struct *parent,
 		sole_child_count = 1;
 	}
 
-	for (struct task_struct *next;
-			(next = rcu_dereference(ancestor->real_parent)) != ancestor &&
+	for (; (next = rcu_dereference(ancestor->real_parent)) != ancestor &&
 			count_children_upto2(ancestor) <= sole_child_count;
 			ancestor = next, sole_child_count = 1)
 		;
 
-	struct bore_bc *bc = &ancestor->se.burst_cache_ancestor;
+	bc = &ancestor->se.burst_cache_ancestor;
 
 	if (burst_cache_expired(bc, now)) {
 		struct task_struct *direct_child;
 		u32 count = 0, total = 0, scan_count = 0;
 		for_each_child_task(ancestor, direct_child) {
+			struct task_struct *descendant;
+
 			if (count >= BURST_CACHE_SAMPLE_LIMIT)
 				break;
 			if (scan_count++ >= BURST_CACHE_SCAN_LIMIT)
 				break;
 
-			struct task_struct *descendant = direct_child;
+			descendant = direct_child;
 			while (count_children_upto2(descendant) == 1) {
 				struct task_struct *next_descendant =
 					list_first_or_null_rcu(&descendant->children,
@@ -353,12 +354,13 @@ static u32 inherit_from_thread_group(struct task_struct *p, u64 now)
 void task_fork_bore(struct task_struct *p,
 		    struct task_struct *parent, unsigned long clone_flags, u64 now)
 {
+	struct sched_entity *se = &p->se;
+	u32 inherited_penalty;
+
 	if (!static_branch_likely(&sched_bore_key) || !task_is_bore_eligible(p))
 		return;
 
 	rcu_read_lock();
-	struct sched_entity *se = &p->se;
-	u32 inherited_penalty;
 	if (clone_flags & CLONE_THREAD)
 		inherited_penalty = inherit_from_thread_group(parent, now);
 	else if (static_branch_likely(&sched_burst_inherit_key))
