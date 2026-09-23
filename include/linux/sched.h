@@ -513,6 +513,20 @@ struct sched_statistics {
 #endif
 };
 
+#ifdef CONFIG_SCHED_BORE
+#define BORE_BC_TIMESTAMP_SHIFT	16
+
+struct bore_bc {
+	union {
+		struct {
+			u64	timestamp:	48;
+			u64	penalty:	16;
+		};
+		u64		value;
+	};
+};
+#endif /* CONFIG_SCHED_BORE */
+
 struct sched_entity {
 	/* For load-balancing: */
 	struct load_weight		load;
@@ -534,13 +548,14 @@ struct sched_entity {
 #endif /* CONFIG_SCHED_EEVDF */
 #ifdef CONFIG_SCHED_BORE
 	u64				burst_time;
-	u8				prev_burst_penalty;
-	u8				curr_burst_penalty;
-	u8				burst_penalty;
-	u8				burst_score;
-	u8				child_burst;
-	u32				child_burst_cnt;
-	u64				child_burst_last_cached;
+	u16				prev_burst_penalty;
+	u16				curr_burst_penalty;
+	u16				burst_penalty;
+	bool				burst_stop_update;
+	bool				bore_futex_waiting;
+	struct bore_bc			burst_cache_subtree;
+	struct bore_bc			burst_cache_ancestor;
+	struct bore_bc			burst_cache_group;
 #endif // CONFIG_SCHED_BORE
 
 	u64				nr_migrations;

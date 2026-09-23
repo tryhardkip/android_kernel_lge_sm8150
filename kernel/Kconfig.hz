@@ -56,3 +56,13 @@ config HZ
 
 config SCHED_HRTICK
 	def_bool HIGH_RES_TIMERS
+
+config MIN_BASE_SLICE_NS
+	int "Minimum base slice (ns)"
+	default 62
+	help
+	  Minimum base time slice (in nanoseconds) handed to each sched
+	  entity under the BORE/EEVDF scheduler.  This value is used to
+	  clamp the effective base slice derived from sched_base_slice_ns.
+
+	  Set to 0 to disable the minimum clamp.
