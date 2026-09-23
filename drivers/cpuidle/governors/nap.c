@@ -1,4 +1,3 @@
-@@ -0,0 +1,1009 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * nap.c - Neural Adaptive Predictor cpuidle governor
@@ -37,6 +36,16 @@
 #include <linux/tick.h>
 
 #define NAP_VERSION		"0.5.0"
+
+/*
+ * 4.14 only defines the microsecond sentinel PM_QOS_LATENCY_ANY.  The nap
+ * pipeline runs entirely in nanoseconds, so provide the ns-scaled sentinel
+ * that newer kernels export and feed it a latency_req that has likewise been
+ * converted to ns (cpuidle_governor_latency_req() returns us on 4.14).
+ */
+#ifndef PM_QOS_LATENCY_ANY_NS
+#define PM_QOS_LATENCY_ANY_NS	((s64)PM_QOS_LATENCY_ANY * NSEC_PER_USEC)
+#endif
 
 #define NAP_INPUT_SIZE		8
 #define NAP_HIDDEN_SIZE		8
@@ -614,7 +623,8 @@ static int nap_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 		return 0;
 	}
 
-	latency_req = cpuidle_governor_latency_req(dev->cpu);
+	/* 4.14 returns us; the rest of nap works in ns. */
+	latency_req = (s64)cpuidle_governor_latency_req(dev->cpu) * NSEC_PER_USEC;
 	sleep_length_ns = ktime_to_ns(tick_nohz_get_sleep_length(&delta_tick));
 	min_state = nap_get_min_valid_state(d, drv, dev, latency_req);
 
