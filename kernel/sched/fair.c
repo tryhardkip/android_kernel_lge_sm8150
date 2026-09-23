@@ -3336,6 +3336,17 @@ void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
 #endif /* CONFIG_SCHED_EEVDF */
 }
 
+#ifdef CONFIG_SCHED_BORE
+/*
+ * cfs_rq_of() is file-static to fair.c; expose a thin wrapper so
+ * kernel/sched/bore.c can resolve the owning cfs_rq for an entity.
+ */
+struct cfs_rq *bore_cfs_rq_of(struct sched_entity *se)
+{
+	return cfs_rq_of(se);
+}
+#endif /* CONFIG_SCHED_BORE */
+
 void reweight_task(struct task_struct *p, int prio)
 {
 	struct sched_entity *se = &p->se;

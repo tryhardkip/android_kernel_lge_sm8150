@@ -124,7 +124,7 @@ static void reweight_task_by_prio(struct task_struct *p, int prio)
 
 	if (se->on_rq) {
 		p->se.burst_stop_update = true;
-		reweight_entity(cfs_rq_of(se), se, weight);
+		reweight_entity(bore_cfs_rq_of(se), se, weight);
 		p->se.burst_stop_update = false;
 	} else
 		se->load.weight = weight;
@@ -192,7 +192,7 @@ void restart_burst_rescale_deadline_bore(struct task_struct *p)
 	u8 new_prio = effective_prio_bore(p);
 
 	if (old_prio > new_prio) {
-		vscaled = (s64)rescale_slice((u64)llabs(vremain), old_prio, new_prio);
+		vscaled = (s64)rescale_slice((u64)abs(vremain), old_prio, new_prio);
 		if (unlikely(vremain < 0))
 			vscaled = -vscaled;
 		se->deadline = se->vruntime + (u64)vscaled;
