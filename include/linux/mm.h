@@ -132,6 +132,7 @@ extern int sysctl_workingset_protection;
 extern u8 sysctl_anon_min_ratio;
 extern u8 sysctl_clean_low_ratio;
 extern u8 sysctl_clean_min_ratio;
+extern int sysctl_low_swappiness_mode;
 int vm_workingset_protection_update_handler(
 	struct ctl_table *table, int write,
 	void __user *buffer, size_t *lenp, loff_t *ppos);
