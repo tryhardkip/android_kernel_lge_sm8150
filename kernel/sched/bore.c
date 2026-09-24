@@ -142,10 +142,18 @@ static void update_penalty(struct task_struct *p)
 	u8  prev_prio = effective_prio_bore(p);
 	s32 diff = (s32)se->curr_burst_penalty - (s32)se->prev_burst_penalty;
 	u16 max_val = se->curr_burst_penalty - (diff & (diff >> 31));
-	u32 is_kthread = !!(p->flags & PF_KTHREAD);
+	/*
+	 * Exempt kthreads and latency-sensitive task groups (Android top-app:
+	 * the UI thread, RenderThread and their foreground workers) from the
+	 * burst penalty so they retain full weight. This complements the halved
+	 * EEVDF request slice applied to the same group: foreground keeps both
+	 * an earlier virtual deadline and its full CPU weight, while BORE still
+	 * penalises genuine background CPU hogs that compete with it.
+	 */
+	u32 exempt = !!(p->flags & PF_KTHREAD) || uclamp_latency_sensitive(p);
 	u8 new_prio;
 
-	se->burst_penalty = max_val & -(s32)(!is_kthread);
+	se->burst_penalty = max_val & -(s32)(!exempt);
 
 	new_prio = effective_prio_bore(p);
 	if (new_prio != prev_prio)
