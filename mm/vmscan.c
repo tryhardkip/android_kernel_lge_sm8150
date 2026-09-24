@@ -184,6 +184,15 @@ int sysctl_workingset_protection __read_mostly = 0;
 u8 sysctl_anon_min_ratio  __read_mostly = CONFIG_ANON_MIN_RATIO;
 u8 sysctl_clean_low_ratio __read_mostly = CONFIG_CLEAN_LOW_RATIO;
 u8 sysctl_clean_min_ratio __read_mostly = CONFIG_CLEAN_MIN_RATIO;
+/*
+ * When set, clamp the effective MGLRU swappiness to at most 1 (never-swap 0 is
+ * still honoured). This makes reclaim prefer dropping cheap clean file cache
+ * over compressing anon into zram during normal pressure, while the
+ * clean_min_ratio floor keeps the hot file working set resident and diverts
+ * pressure to anon only under genuine exhaustion. Default off: behaviour is
+ * unchanged unless explicitly enabled. Idea borrowed from firelzrd/lru_marie.
+ */
+int sysctl_low_swappiness_mode __read_mostly;
 static u64 sysctl_anon_min_ratio_kb  __read_mostly = 0;
 static u64 sysctl_clean_low_ratio_kb __read_mostly = 0;
 static u64 sysctl_clean_min_ratio_kb __read_mostly = 0;
@@ -2761,11 +2770,18 @@ static struct lruvec *get_lruvec(struct mem_cgroup *memcg, int nid)
 static int get_swappiness(struct lruvec *lruvec, struct scan_control *sc)
 {
 	struct mem_cgroup *memcg = lruvec_memcg(lruvec);
+	int swappiness;
 
 	if (mem_cgroup_get_nr_swap_pages(memcg) < MIN_LRU_BATCH)
 		return 0;
 
-	return mem_cgroup_swappiness(memcg);
+	swappiness = mem_cgroup_swappiness(memcg);
+
+	/* the clamp only ever lowers; a deliberate 0 (never-swap) is preserved */
+	if (READ_ONCE(sysctl_low_swappiness_mode) && swappiness > 1)
+		swappiness = 1;
+
+	return swappiness;
 }
 
 static int get_nr_gens(struct lruvec *lruvec, int type)

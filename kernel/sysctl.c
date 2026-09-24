@@ -1799,6 +1799,15 @@ static struct ctl_table vm_table[] = {
 		.extra1		= &zero,
 		.extra2		= &one_hundred,
 	},
+	{
+		.procname	= "low_swappiness_mode",
+		.data		= &sysctl_low_swappiness_mode,
+		.maxlen		= sizeof(sysctl_low_swappiness_mode),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
 #ifdef CONFIG_OPLUS_MM_HACKS
 	{
 		.procname	= "direct_swappiness",
