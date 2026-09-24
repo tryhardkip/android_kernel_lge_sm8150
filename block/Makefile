@@ -22,6 +22,12 @@ obj-$(CONFIG_IOSCHED_DEADLINE)	+= deadline-iosched.o
 obj-$(CONFIG_IOSCHED_CFQ)	+= cfq-iosched.o
 obj-$(CONFIG_MQ_IOSCHED_DEADLINE)	+= mq-deadline.o
 obj-$(CONFIG_MQ_IOSCHED_KYBER)	+= kyber-iosched.o
+obj-$(CONFIG_MQ_IOSCHED_ADIOS)	+= adios.o
+# ADIOS is written against a newer blk-mq elevator API and uses C99/C11
+# constructs (in-loop declarations, mixed declarations, scoped_guard()). This
+# kernel builds with -std=gnu89, so compile this single file as gnu11 (the last
+# -std on the command line wins). No ABI impact: only C language features differ.
+CFLAGS_adios.o += -std=gnu11
 bfq-y				:= bfq-iosched.o bfq-wf2q.o bfq-cgroup.o
 obj-$(CONFIG_IOSCHED_BFQ)	+= bfq.o
 obj-$(CONFIG_IOSCHED_ZEN)       += zen-iosched.o
