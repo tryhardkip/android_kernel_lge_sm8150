@@ -17,6 +17,7 @@
 
 #define VOTER_NAME_THERMALD	"THERMALD"
 #define VOTER_NAME_HIDDENM	"HIDDENM"
+#define VOTER_NAME_BYPASS	"BYPASS"
 #define RESTRICTION_MAX_COUNT	8
 #define RESTRICTION_MAX_NAME	32
 
@@ -29,6 +30,7 @@ struct unified_nodes {
 	struct voter_entry		thermald_vdc;
 	struct voter_entry		charging_restriction [RESTRICTION_MAX_COUNT];
 	struct voter_entry		charging_enable [2]; // 0 for iusb, 1 for idc
+	struct voter_entry		charging_bypass; // ibat, keeps input on while stopping battery charge
 	const char*			charging_step;
 	bool				charging_showcase;
 	void*				charging_completed;
@@ -77,6 +79,8 @@ static void voter_unregister(struct unified_nodes* uninodes) {
 	// For Hiddenm
 	veneer_voter_unregister(&uninodes->charging_enable[0]); // 0 for iusb,
 	veneer_voter_unregister(&uninodes->charging_enable[1]); // 1 for idc,
+	// For Bypass
+	veneer_voter_unregister(&uninodes->charging_bypass);
 }
 
 static bool voter_register(struct unified_nodes* uninodes) {
@@ -117,7 +121,11 @@ static bool voter_register(struct unified_nodes* uninodes) {
 	&& veneer_voter_register(&uninodes->thermald_idc, VOTER_NAME_THERMALD, VOTER_TYPE_IDC, false)
 // For Hiddenm
 	&& veneer_voter_register(&uninodes->charging_enable[0], VOTER_NAME_HIDDENM, VOTER_TYPE_IUSB, true)
-	&& veneer_voter_register(&uninodes->charging_enable[1], VOTER_NAME_HIDDENM, VOTER_TYPE_IDC, true);
+	&& veneer_voter_register(&uninodes->charging_enable[1], VOTER_NAME_HIDDENM, VOTER_TYPE_IDC, true)
+// For Bypass charging : block the battery charge FET (ibat) while leaving the
+// USB/DC input path enabled, so the system runs from the adapter. fakeui is
+// false so the charging UI keeps reflecting the real charger state.
+	&& veneer_voter_register(&uninodes->charging_bypass, VOTER_NAME_BYPASS, VOTER_TYPE_IBAT, false);
 
 	if (!ret) {
 		pr_uninode("failed to register voters\n");
@@ -557,6 +565,55 @@ static ssize_t charging_enable_show(struct device* dev, struct device_attribute*
 			&& iusb->limit == idc->limit) {
 			ret = (iusb->limit == VOTE_TOTALLY_RELEASED);
 			pr_dbg_uninode("Success to get charging_enabled (%d)\n", ret);
+		}
+	}
+
+	return snprintf(buf, PAGE_SIZE, "%d", ret);
+}
+
+static ssize_t charging_bypass_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t size) {
+	struct unified_nodes*	ref;
+	struct voter_entry*	ibat;
+	int bypass = false;
+	int limit;
+	static int pre_bypass = -1;
+
+	sscanf(buf, "%d", &bypass);
+	if (pre_bypass != bypass) {
+		pre_bypass = bypass;
+		pr_uninode("Storing %s\n", buf);
+	}
+
+	if (dev && dev->platform_data) {
+		ref = (struct unified_nodes*)dev->platform_data;
+		ibat = &ref->charging_bypass;
+
+		if (ibat->type == VOTER_TYPE_IBAT) {
+			/* Blocking ibat stops the battery charge FET but keeps the
+			 * input path alive, so the system is powered from the charger.
+			 */
+			limit = !!bypass ? VOTE_TOTALLY_BLOCKED : VOTE_TOTALLY_RELEASED;
+
+			veneer_voter_set(ibat, limit);
+
+			pr_uninode("Success to set charging_bypass\n");
+		}
+	}
+
+	return size;
+}
+static ssize_t charging_bypass_show(struct device* dev, struct device_attribute* attr, char* buf) {
+	int ret = 0;
+	struct unified_nodes*	ref;
+	struct voter_entry*	ibat;
+
+	if (dev && dev->platform_data) {
+		ref = (struct unified_nodes*)dev->platform_data;
+		ibat = &ref->charging_bypass;
+
+		if (ibat->type == VOTER_TYPE_IBAT) {
+			ret = (ibat->limit == VOTE_TOTALLY_BLOCKED);
+			pr_dbg_uninode("Success to get charging_bypass (%d)\n", ret);
 		}
 	}
 
@@ -1154,6 +1211,7 @@ static struct device_attribute unified_nodes_dattrs [] = {
 	__ATTR(status_lcd,		0664, status_lcd_show,			status_lcd_store),
 	__ATTR(charging_restriction,	0664, charging_restriction_show,	charging_restriction_store),
 	__ATTR(charging_enable,		0664, charging_enable_show,		charging_enable_store),
+	__ATTR(charging_bypass,		0664, charging_bypass_show,		charging_bypass_store),
 	__ATTR(charging_step,		0644, charging_step_show,		charging_step_store),
 	__ATTR(charging_showcase,	0664, charging_showcase_show,		charging_showcase_store),
 	__ATTR(charging_completed,	0664, charging_completed_show,		charging_completed_store),
