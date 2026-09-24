@@ -1064,6 +1064,24 @@ static void update_entity_lag(struct cfs_rq *cfs_rq, struct sched_entity *se)
 }
 
 /*
+ * EEVDF request slice for an entity. Latency-sensitive task groups (Android's
+ * top-app: the UI thread and RenderThread) get a halved slice, which yields an
+ * earlier virtual deadline so pick_eevdf() selects the render pipeline sooner
+ * and it preempts background work faster, cutting frame scheduling latency.
+ * Everything else keeps the full base slice to minimise context-switch churn.
+ * The halving magnitude matches the existing BORE futex-wake fast path.
+ */
+static __always_inline unsigned int eevdf_slice(struct sched_entity *se)
+{
+	unsigned int slice = sysctl_sched_base_slice;
+
+	if (entity_is_task(se) && uclamp_latency_sensitive(task_of(se)))
+		slice >>= 1;
+
+	return slice;
+}
+
+/*
  * EEVDF: advance the running entity's virtual deadline once it has consumed
  * its current slice. Returns true when the slice was exhausted and the CPU
  * should be rescheduled.
@@ -1073,7 +1091,7 @@ static bool update_deadline_eevdf(struct cfs_rq *cfs_rq, struct sched_entity *se
 	if ((s64)(se->vruntime - se->deadline) < 0)
 		return false;
 
-	se->slice = sysctl_sched_base_slice;
+	se->slice = eevdf_slice(se);
 	se->deadline = se->vruntime + calc_delta_fair(se->slice, se);
 
 	return true;
@@ -4615,8 +4633,8 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 	u64 vslice, vruntime = avg_vruntime(cfs_rq);
 	s64 lag = 0;
 
-	/* Every entity runs with a base slice under EEVDF. */
-	se->slice = sysctl_sched_base_slice;
+	/* Every entity runs with a base slice under EEVDF (halved for top-app). */
+	se->slice = eevdf_slice(se);
 	vslice = calc_delta_fair(se->slice, se);
 
 	/*
