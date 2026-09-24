@@ -258,6 +258,48 @@ static bool sane_reclaim(struct scan_control *sc)
  * As the data only determines if reclaim or compaction continues, it is
  * not expected that isolated pages will be a dominating factor.
  */
+/*
+ * On RAM-backed swap (zram / zswap via zsmalloc) evicting an anonymous page
+ * frees it but immediately spends a fraction of a page storing the compressed
+ * copy, so only part of each anon page is truly reclaimable. Reporting anon at
+ * face value is what lets the "every reclaim pass nets nothing yet the OOM
+ * killer never arms" freeze happen on zram: the store is sized far above RAM,
+ * so nominal swap slots never run out and the no-progress test upstream is fed
+ * a fictional amount of reclaimable memory.
+ *
+ * Discount anon by the *measured* compression fill:
+ *
+ *	net = anon * (stored - zspages) / stored
+ *
+ * where stored is the uncompressed pages currently held in swap and zspages is
+ * the RAM those pages actually occupy. No ratio or tuning constant is assumed.
+ * Self-gating: with a real swap disk (no zsmalloc) NR_ZSPAGES stays 0 and this
+ * returns anon unchanged; before anything is stored it also returns anon; and
+ * it reaches 0 exactly when the store has stopped compressing.
+ *
+ * Assumes zram/zsmalloc is used for swap (the Android norm). If zsmalloc is
+ * also driving a non-swap consumer (e.g. a compressed tmpfs) NR_ZSPAGES is
+ * inflated and anon would be over-discounted.
+ */
+static unsigned long discount_swap_backed_anon(unsigned long anon)
+{
+#if IS_ENABLED(CONFIG_ZSMALLOC)
+	unsigned long stored = total_swap_pages - get_nr_swap_pages();
+	unsigned long zspages;
+
+	if (!stored)
+		return anon;
+
+	zspages = global_zone_page_state(NR_ZSPAGES);
+	if (zspages >= stored)
+		return 0;
+
+	return mult_frac(anon, stored - zspages, stored);
+#else
+	return anon;
+#endif
+}
+
 unsigned long zone_reclaimable_pages(struct zone *zone)
 {
 	unsigned long nr;
@@ -265,8 +307,9 @@ unsigned long zone_reclaimable_pages(struct zone *zone)
 	nr = zone_page_state_snapshot(zone, NR_ZONE_INACTIVE_FILE) +
 		zone_page_state_snapshot(zone, NR_ZONE_ACTIVE_FILE);
 	if (get_nr_swap_pages() > 0 || lmk_kill_possible())
-		nr += zone_page_state_snapshot(zone, NR_ZONE_INACTIVE_ANON) +
-			zone_page_state_snapshot(zone, NR_ZONE_ACTIVE_ANON);
+		nr += discount_swap_backed_anon(
+			zone_page_state_snapshot(zone, NR_ZONE_INACTIVE_ANON) +
+			zone_page_state_snapshot(zone, NR_ZONE_ACTIVE_ANON));
 
 	return nr;
 }
@@ -280,9 +323,10 @@ unsigned long pgdat_reclaimable_pages(struct pglist_data *pgdat)
 	     node_page_state_snapshot(pgdat, NR_ISOLATED_FILE);
 
 	if (get_nr_swap_pages() > 0)
-		nr += node_page_state_snapshot(pgdat, NR_ACTIVE_ANON) +
-		      node_page_state_snapshot(pgdat, NR_INACTIVE_ANON) +
-		      node_page_state_snapshot(pgdat, NR_ISOLATED_ANON);
+		nr += discount_swap_backed_anon(
+			node_page_state_snapshot(pgdat, NR_ACTIVE_ANON) +
+			node_page_state_snapshot(pgdat, NR_INACTIVE_ANON) +
+			node_page_state_snapshot(pgdat, NR_ISOLATED_ANON));
 
 	return nr;
 }
