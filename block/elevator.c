@@ -235,8 +235,19 @@ int elevator_init(struct request_queue *q, char *name)
 		 * to "none".
 		 */
 		if (q->mq_ops) {
-			if (q->nr_hw_queues == 1)
-				e = elevator_get(q, "none", false);
+			/*
+			 * Hardcoded default: use ADIOS for single-hardware-queue
+			 * blk-mq devices (e.g. UFS). Fall back to mq-deadline,
+			 * then "none", so the device always boots even if ADIOS
+			 * failed to register.
+			 */
+			if (q->nr_hw_queues == 1) {
+				e = elevator_get(q, "adios", false);
+				if (!e)
+					e = elevator_get(q, "mq-deadline", false);
+				if (!e)
+					e = elevator_get(q, "none", false);
+			}
 			if (!e)
 				return 0;
 		} else
