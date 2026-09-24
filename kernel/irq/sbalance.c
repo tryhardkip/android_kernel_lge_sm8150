@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (C) 2023 Sultan Alsawaf <sultan@kerneltoast.com>.
+ * Copyright (C) 2023-2024 Sultan Alsawaf <sultan@kerneltoast.com>.
  */
 
 /**
@@ -58,6 +58,7 @@ struct bal_irq {
 
 struct bal_domain {
 	struct list_head movable_irqs;
+	unsigned long old_total;
 	unsigned int intrs;
 	int cpu;
 };
@@ -111,10 +112,13 @@ static bool update_irq_data(struct bal_irq *bi, int *cpu)
 	struct irq_desc *desc = bi->desc;
 	unsigned int nr;
 
-	/* Find the CPU which currently has this IRQ affined */
-	raw_spin_lock_irq(&desc->lock);
-	*cpu = cpumask_first(desc->irq_common_data.affinity);
-	raw_spin_unlock_irq(&desc->lock);
+	/*
+	 * Get the CPU which currently has this IRQ affined. Due to hardware and
+	 * irqchip driver quirks, a previously set affinity may not match the
+	 * actual affinity of the IRQ. Therefore, we check the last CPU that the
+	 * IRQ fired upon in order to determine its actual affinity.
+	 */
+	*cpu = READ_ONCE(desc->last_cpu);
 	if (*cpu >= nr_cpu_ids)
 		return false;
 
@@ -185,12 +189,20 @@ static bool find_min_bd(const cpumask_t *mask, unsigned int max_intrs,
 		if (intrs > max_intrs)
 			return true;
 
+		/* Don't consider moving IRQs to this CPU if it's excluded */
+		if (cpumask_test_cpu(cpu, &cpu_exclude_mask))
+			continue;
+
 		/* Find the CPU with the lowest relative number of interrupts */
 		if (intrs < min_intrs) {
 			min_intrs = intrs;
 			*min_bd = bd;
 		}
 	}
+
+	/* No CPUs available to move IRQs onto */
+	if (min_intrs == UINT_MAX)
+		return true;
 
 	/* Don't balance if IRQs are already balanced evenly enough */
 	return max_intrs - min_intrs < IRQ_SCALED_THRESH;
@@ -205,42 +217,47 @@ static void balance_irqs(void)
 	struct bal_irq *bi;
 	int cpu;
 
+	cpus_read_lock();
 	rcu_read_lock();
 
 	/* Find the available CPUs for balancing, if there are any */
-	cpumask_andnot(&cpus, cpu_active_mask, &cpu_exclude_mask);
+	cpumask_copy(&cpus, cpu_active_mask);
 	if (unlikely(cpumask_weight(&cpus) <= 1))
 		goto unlock;
 
-	/*
-	 * Get the current capacity for each CPU. This is adjusted for time
-	 * spent processing IRQs, RT-task time, and thermal pressure. We don't
-	 * exclude time spent processing IRQs when balancing because balancing
-	 * is only done using interrupt counts rather than time spent in
-	 * interrupts. That way, time spent processing each interrupt is
-	 * considered when balancing.
-	 */
-	for_each_cpu(cpu, &cpus)
+	for_each_cpu(cpu, &cpus) {
+		/*
+		 * Get the current capacity for each CPU. This is adjusted for
+		 * time spent processing IRQs, RT-task time, and thermal
+		 * pressure. We don't exclude time spent processing IRQs when
+		 * balancing because balancing is only done using interrupt
+		 * counts rather than time spent in interrupts. That way, time
+		 * spent processing each interrupt is considered when balancing.
+		 */
 		per_cpu(cpu_cap, cpu) = cpu_rq(cpu)->cpu_capacity;
 
-	list_for_each_entry_rcu(bi, &bal_irq_list, node) {
-		if (!update_irq_data(bi, &cpu))
-			continue;
-
-		/* Add the number of new interrupts to this CPU's count */
+		/* Get the number of new interrupts on this CPU */
 		bd = per_cpu_ptr(&balance_data, cpu);
-		bd->intrs += bi->delta_nr;
+		bd->intrs = kstat_cpu_irqs_sum(cpu) - bd->old_total;
+		bd->old_total += bd->intrs;
+	}
 
+	list_for_each_entry_rcu(bi, &bal_irq_list, node) {
 		/* Consider this IRQ for balancing if it's movable */
 		if (!__irq_can_set_affinity(bi->desc))
 			continue;
 
-		/* Ignore for this balancing run if something else moved it */
+		if (!update_irq_data(bi, &cpu))
+			continue;
+
+		/* Ignore for this run if the IRQ isn't on the expected CPU */
 		if (cpu != bi->prev_cpu) {
 			bi->prev_cpu = cpu;
 			continue;
 		}
 
+		/* Add this IRQ to its CPU's list of movable IRQs */
+		bd = per_cpu_ptr(&balance_data, cpu);
 		list_add_tail(&bi->move_node, &bd->movable_irqs);
 	}
 
@@ -273,7 +290,7 @@ try_next_heaviest:
 		if (cpumask_weight(&cpus) == 2)
 			goto unlock;
 
-		cpumask_clear_cpu(max_bd->cpu, &cpus);
+		__cpumask_clear_cpu(max_bd->cpu, &cpus);
 	}
 
 	/* Find the CPU with the lowest relative interrupt count */
@@ -297,9 +314,14 @@ try_next_heaviest:
 		/* Keep track of whether or not any IRQs are moved */
 		moved_irq = true;
 
-		/* Update the counts and recalculate the max scaled count */
+		/*
+		 * Update the counts and recalculate the max scaled count. The
+		 * balance domain's delta interrupt count could be lower than
+		 * the sum of new interrupts counted for each IRQ, since they're
+		 * measured using different counters.
+		 */
 		min_bd->intrs += bi->delta_nr;
-		max_bd->intrs -= bi->delta_nr;
+		max_bd->intrs -= min(bi->delta_nr, max_bd->intrs);
 		max_intrs = scale_intrs(max_bd->intrs, max_bd->cpu);
 
 		/* Recheck for the least-heavy CPU since it may have changed */
@@ -315,6 +337,7 @@ try_next_heaviest:
 		goto try_next_heaviest;
 unlock:
 	rcu_read_unlock();
+	cpus_read_unlock();
 
 	/* Reset each balance domain for the next run */
 	for_each_possible_cpu(cpu) {
@@ -322,6 +345,38 @@ unlock:
 		INIT_LIST_HEAD(&bd->movable_irqs);
 		bd->intrs = 0;
 	}
+}
+
+struct process_timer {
+	struct timer_list timer;
+	struct task_struct *task;
+};
+
+static void process_timeout(unsigned long data)
+{
+	struct process_timer *timeout = (struct process_timer *)data;
+
+	wake_up_process(timeout->task);
+}
+
+static void sbalance_wait(long poll_jiffies)
+{
+	struct process_timer timer;
+
+	/*
+	 * Open code freezable_schedule_timeout_interruptible() in order to
+	 * make the timer deferrable, so that it doesn't kick CPUs out of idle.
+	 */
+	freezer_do_not_count();
+	__set_current_state(TASK_IDLE);
+	timer.task = current;
+	setup_deferrable_timer_on_stack(&timer.timer, process_timeout, (unsigned long)&timer);
+	timer.timer.expires = jiffies + poll_jiffies;
+	add_timer(&timer.timer);
+	schedule();
+	del_singleshot_timer_sync(&timer.timer);
+	destroy_timer_on_stack(&timer.timer);
+	freezer_count();
 }
 
 static int __noreturn sbalance_thread(void *data)
@@ -343,7 +398,7 @@ static int __noreturn sbalance_thread(void *data)
 
 	set_freezable();
 	while (1) {
-		freezable_schedule_timeout_interruptible(poll_jiffies);
+		sbalance_wait(poll_jiffies);
 		balance_irqs();
 	}
 }
