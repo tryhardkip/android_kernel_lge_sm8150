@@ -8383,8 +8383,8 @@ static unsigned int uclamp_pct_to_util(unsigned int pct)
 static void uclamp_assist_apply(struct cgroup_subsys_state *css)
 {
 	static const struct uclamp_assist_param tgts[] = {
-		{ "top-app",           50,  -1, 1, 1 },  /* 50-100%: floor foreground ~1.4-1.5GHz (replaces cpu_boost); tune at runtime via /dev/cpuctl/top-app/cpu.uclamp.min */
-		{ "foreground",         0,  60, 1, 0 },  /* 0-60%: cap non-top foreground for efficiency */
+		{ "top-app",           30,  -1, 1, 1 },  /* 30-100%: floor foreground ~850MHz (reduced from 50% for active power); tune at runtime via /dev/cpuctl/top-app/cpu.uclamp.min */
+		{ "foreground",         0,  50, 1, 0 },  /* 0-50%: reduced cap for efficiency */
 		{ "background",         0,  30, 0, 0 },  /* 0-30%: tighter cap saves power on bg work */
 		{ "system-background",  0,  40, 0, 0 },  /* 0-40% */
 		{ "restricted",         0,  15, 0, 0 },  /* 0-15%   */
