@@ -948,8 +948,16 @@ static int es9218p_sabre_amp_start(struct i2c_client *client, int headset)
             break;
 
         default :
-            pr_err("%s() : Unknown headset = %d \n", __func__, headset);
-            ret = 1;
+            //
+            //  Boot-time race: the audio HAL sets "Es9018 HEADSET TYPE" only
+            //  after impedance detection completes (can be ~10s after boot).
+            //  If playback starts before that, headset is still 0 and the amp
+            //  would never be enabled, leaving the chip silently "in HiFi".
+            //  Fall back to HiFi1 (normal) so audio always comes up; the HAL
+            //  will reconfigure to the correct mode on the next transition.
+            //
+            pr_notice("%s() : headset not detected yet (%d), defaulting to hifi1.\n", __func__, headset);
+            es9218p_sabre_lpb2hifione();
             break;
     }
 
@@ -997,8 +1005,10 @@ static int es9218p_sabre_amp_stop(struct i2c_client *client, int headset)
             break;
 
         default :
-            pr_err("%s() : Invalid headset = %d \n", __func__, g_headset_type);
-            ret = 1;
+            // Mirror amp_start(): treat an undetected type as HiFi1 so the
+            // amp is always torn down cleanly on headphone-off.
+            pr_notice("%s() : headset not detected (%d), tearing down hifi1.\n", __func__, g_headset_type);
+            es9218p_sabre_hifione2lpb();
             break;
     }
 
@@ -1880,6 +1890,14 @@ static int es9218p_sabre_bypass2hifi(void)
         g_headset_type = forced_headset_type;
     }
 #endif
+    // Boot-time race guard: if the HAL hasn't reported the headset type yet
+    // (g_headset_type == 0), assume normal/HiFi1 so bypass2hifi still enables
+    // the analog amp instead of leaving the chip silently in fake-HiFi.
+    if (g_headset_type == 0) {
+        pr_notice("%s() : headset type not set yet, defaulting to 1 (normal).\n", __func__);
+        g_headset_type = 1;
+    }
+
     es9218_set_thd(g_es9218_priv->i2c_client, g_headset_type);
     es9218_sabre_cfg_custom_filter(&es9218_sabre_custom_ft[g_sabre_cf_num]);
     es9218_write_reg(g_es9218_priv->i2c_client, ES9218P_REG_15, g_left_volume);     // set left channel digital volume level
