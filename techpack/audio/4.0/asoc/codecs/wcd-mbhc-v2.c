@@ -1433,6 +1433,18 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 
 	reinit_completion(&mbhc->btn_press_compl);
 
+	/*
+	 * Trigger plug type detection to handle the case where a headset
+	 * is already plugged in at initialization time. Without this, the
+	 * MBHC will not detect the existing plug until the jack is physically
+	 * unplugged and reinserted, resulting in no audio after reboot when
+	 * a headset was already connected.
+	 */
+	if (mbhc->mbhc_fn &&
+			mbhc->mbhc_fn->wcd_mbhc_detect_plug_type) {
+		mbhc->mbhc_fn->wcd_mbhc_detect_plug_type(mbhc);
+	}
+
 	WCD_MBHC_RSC_UNLOCK(mbhc);
 	pr_debug("%s: leave\n", __func__);
 	return ret;
