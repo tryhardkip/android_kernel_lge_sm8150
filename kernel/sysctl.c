@@ -622,6 +622,7 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	},
+#ifdef CONFIG_SCHED_IDLE_DRAIN_REDUCTION
 	{
 		.procname	= "sched_idle_drain_reduction",
 		.data		= &sysctl_sched_idle_drain_reduction,
@@ -629,6 +630,8 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	},
+#endif /* CONFIG_SCHED_IDLE_DRAIN_REDUCTION */
+#ifdef CONFIG_SCHED_PROACTIVE_IDLE_BALANCE
 	{
 		.procname	= "sched_proactive_balance_threshold",
 		.data		= &sysctl_sched_proactive_balance_threshold,
@@ -636,6 +639,7 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	},
+#endif /* CONFIG_SCHED_PROACTIVE_IDLE_BALANCE */
 	{
 		.procname	= "sched_wakeup_granularity_ns",
 		.data		= &sysctl_sched_wakeup_granularity,
