@@ -5,6 +5,8 @@
 #include <linux/rculist.h>
 #include <linux/wait.h>
 
+struct file;
+
 enum pid_type
 {
 	PIDTYPE_PID,
@@ -83,6 +85,8 @@ static inline struct pid *get_pid(struct pid *pid)
 extern void put_pid(struct pid *pid);
 extern struct task_struct *pid_task(struct pid *pid, enum pid_type);
 extern struct task_struct *get_pid_task(struct pid *pid, enum pid_type);
+extern struct pid *pidfd_pid(const struct file *file);
+extern struct pid *pidfd_get_pid(unsigned int fd);
 
 extern struct pid *get_task_pid(struct task_struct *task, enum pid_type type);
 
@@ -96,8 +100,7 @@ extern void change_pid(struct task_struct *task, enum pid_type,
 extern void transfer_pid(struct task_struct *old, struct task_struct *new,
 			 enum pid_type);
 
-struct pid_namespace;
-extern struct pid_namespace init_pid_ns;
+struct pid_namespace;extern struct pid_namespace init_pid_ns;
 
 /*
  * look up a PID in the hash table. Must be called with the tasklist_lock
