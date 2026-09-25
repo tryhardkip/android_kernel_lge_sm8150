@@ -348,6 +348,9 @@ asmlinkage long compat_sys_ustat(unsigned dev, struct compat_ustat __user *u32);
 
 asmlinkage ssize_t compat_sys_readv(compat_ulong_t fd,
 		const struct compat_iovec __user *vec, compat_ulong_t vlen);
+asmlinkage long compat_sys_process_madvise(compat_int_t pidfd,
+		const struct compat_iovec __user *vec, compat_size_t vlen,
+		compat_int_t behavior, compat_uint_t flags);
 asmlinkage ssize_t compat_sys_writev(compat_ulong_t fd,
 		const struct compat_iovec __user *vec, compat_ulong_t vlen);
 asmlinkage ssize_t compat_sys_preadv(compat_ulong_t fd,

@@ -1603,6 +1603,43 @@ const struct file_operations pidfd_fops = {
 };
 
 /**
+ * pidfd_pid - return the struct pid referenced by a pidfd file
+ * @file: a pidfd file (as produced by pidfd_open()/CLONE_PIDFD)
+ *
+ * Return: the struct pid on success, ERR_PTR(-EBADF) if @file is not a pidfd.
+ */
+struct pid *pidfd_pid(const struct file *file)
+{
+	if (file->f_op == &pidfd_fops)
+		return file->private_data;
+
+	return ERR_PTR(-EBADF);
+}
+
+/**
+ * pidfd_get_pid - take a reference on the struct pid behind a pidfd
+ * @fd: a pidfd file descriptor
+ *
+ * Return: the referenced struct pid (caller must put_pid()) or an ERR_PTR.
+ */
+struct pid *pidfd_get_pid(unsigned int fd)
+{
+	struct fd f;
+	struct pid *pid;
+
+	f = fdget(fd);
+	if (!f.file)
+		return ERR_PTR(-EBADF);
+
+	pid = pidfd_pid(f.file);
+	if (!IS_ERR(pid))
+		get_pid(pid);
+
+	fdput(f);
+	return pid;
+}
+
+/**
  * pidfd_create() - Create a new pid file descriptor.
  *
  * @pid:  struct pid that the pidfd will reference
