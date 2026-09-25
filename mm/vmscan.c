@@ -176,11 +176,12 @@ struct scan_control {
 #define prefetchw_prev_lru_page(_page, _base, _field) do { } while (0)
 #endif
 
-#ifdef CONFIG_LE9UO
-int sysctl_workingset_protection __read_mostly = 1;
-#else
+/*
+ * Disabled at boot regardless of CONFIG_LE9UO. le9uo working set protection
+ * can be enabled at runtime via:
+ *   echo 1 > /proc/sys/vm/workingset_protection
+ */
 int sysctl_workingset_protection __read_mostly = 0;
-#endif
 u8 sysctl_anon_min_ratio  __read_mostly = CONFIG_ANON_MIN_RATIO;
 u8 sysctl_clean_low_ratio __read_mostly = CONFIG_CLEAN_LOW_RATIO;
 u8 sysctl_clean_min_ratio __read_mostly = CONFIG_CLEAN_MIN_RATIO;
