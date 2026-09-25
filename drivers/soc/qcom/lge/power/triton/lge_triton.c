@@ -513,6 +513,11 @@ static void frequency_process(struct work_struct *work)
 	if (!(platform_data->state & RUNNING))
 		goto exit;
 
+	/* Skip frequency adjustments when in NT (idle) policy to avoid
+	 * unnecessary CPU wakeups during idle periods */
+	if (platform_data->notify_info.cur_policy == NT)
+		goto exit;
+
 	get_online_cpus();
 
 	dst_cpu = get_dst_cpu(platform_data->notify_info.cur_policy, &cl);

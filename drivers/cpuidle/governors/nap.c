@@ -60,7 +60,8 @@
 #define NAP_DEFAULT_LR_MILLTHS		1	/* 0.001 */
 #define NAP_DEFAULT_INTERVAL		4	/* learn every 4 reflects */
 #define NAP_DEFAULT_CLAMP_MILLTHS	1000	/* 1.0 */
-#define NAP_DEFAULT_CONF_MILLTHS	500	/* 0.5 */
+#define NAP_DEFAULT_DEEP_IDLE_MIN_NS		1000000ULL	/* 1ms - minimum idle to consider deep states */
+#define NAP_DEFAULT_CONF_MILLTHS	200	/* 0.2 - more aggressive deep idle */
 
 /*
  * POLL short-circuit: dev->poll_limit_ns floor and margin.  Both 1 us, the
