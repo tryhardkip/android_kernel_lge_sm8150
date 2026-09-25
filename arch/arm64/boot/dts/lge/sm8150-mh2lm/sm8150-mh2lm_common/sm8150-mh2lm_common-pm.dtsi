@@ -135,11 +135,17 @@
 &soc {
 	lrmc {
 		compatible = "lge,lrmc";
-		bob_min_voltage    = <3920000>;
+		bob_min_voltage    = <3312000>;
 		bob_max_voltage    = <4000000>;
 		def_min_voltage    = <3312000>;
 		def_max_voltage    = <4000000>;
 		lrmc_bob_vreg-supply = <&pm8150l_bob>;
+	};
+
+	lpm_wa: lpm-workarounds {
+		compatible = "qcom,lpm-workarounds";
+		qcom,lpm-wa-cx-turbo-unvote;
+		qcom,lpm-wa-skip-l2-spm;
 	};
 };
 
