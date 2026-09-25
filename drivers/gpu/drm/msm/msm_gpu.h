@@ -121,7 +121,7 @@ struct msm_gpu {
 
 	/* Hang and Inactivity Detection:
 	 */
-#define DRM_MSM_INACTIVE_PERIOD   66 /* in ms (roughly four frames) */
+#define DRM_MSM_INACTIVE_PERIOD   200 /* in ms - extended from 66ms for better active power (reduces GPU power state thrashing) */
 
 #define DRM_MSM_HANGCHECK_PERIOD 500 /* in ms */
 #define DRM_MSM_HANGCHECK_JIFFIES msecs_to_jiffies(DRM_MSM_HANGCHECK_PERIOD)
