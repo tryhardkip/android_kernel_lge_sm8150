@@ -1527,7 +1527,12 @@ unsigned long reclaim_clean_pages_from_list(struct zone *zone,
 	return ret;
 }
 
-#ifdef CONFIG_PROCESS_RECLAIM
+/*
+ * Reclaim a caller-supplied list of isolated pages that all belong to @vma.
+ * Used by /proc/<pid>/reclaim (CONFIG_PROCESS_RECLAIM) and by
+ * MADV_PAGEOUT / process_madvise(). Always compiled: callers are gated by
+ * their own config, not this helper.
+ */
 unsigned long reclaim_pages_from_list(struct list_head *page_list,
 					struct vm_area_struct *vma)
 {
@@ -1559,7 +1564,6 @@ unsigned long reclaim_pages_from_list(struct list_head *page_list,
 
 	return nr_reclaimed;
 }
-#endif
 
 /*
  * Attempt to remove the specified page from its LRU.  Only take this page
