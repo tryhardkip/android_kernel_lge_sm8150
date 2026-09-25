@@ -247,6 +247,7 @@ struct flash_node_data {
 	u8				strobe_sel;
 	enum flash_led_type		type;
 	bool				led_on;
+	bool				hw_on;
 
 #ifdef CONFIG_MACH_LGE
 	struct device	*dbg_dev;
@@ -1365,7 +1366,7 @@ static void qpnp_flash_led_node_set(struct flash_node_data *fnode, int value)
 	int min_ma = fnode->ires_ua / 1000;
 	struct qpnp_flash_led *led = dev_get_drvdata(&fnode->pdev->dev);
 	u8 pmic_subtype = led->pdata->pmic_rev_id->pmic_subtype;
-
+	int rc;
 #ifdef CONFIG_MACH_LGE
 	if(fnode->dbg_current) {
 		pr_info("current changed, %d -> %d\n", value, fnode->dbg_current);
@@ -1406,6 +1407,8 @@ static void qpnp_flash_led_node_set(struct flash_node_data *fnode, int value)
 					fnode->ires_ua);
 	if (prgm_current_ma)
 		fnode->led_on = true;
+	else
+		fnode->led_on = false;
 
 	if (pmic_subtype != PMI632_SUBTYPE &&
 	       led->pdata->chgr_mitigation_sel == FLASH_SW_CHARGER_MITIGATION) {
@@ -1414,6 +1417,94 @@ static void qpnp_flash_led_node_set(struct flash_node_data *fnode, int value)
 		if (led->total_current_ma >= 1000)
 			led->trigger_chgr = true;
 	}
+
+	/*
+	 * Write hardware registers to enable/disable the torch LED directly
+	 * from the fnode (torch) path, so that the QS tile / LED trigger
+	 * works without the camera app being opened first.
+	 */
+	if (prgm_current_ma > 0) {
+		u8 addr_offset = fnode->id;
+		u8 strobe_mask;
+
+		if (fnode->hw_on)
+			return;
+
+		/* Enable the flash LED module */
+		rc = qpnp_flash_led_masked_write(led,
+				FLASH_LED_REG_MOD_CTRL(led->base),
+				FLASH_LED_MOD_CTRL_MASK,
+				FLASH_LED_MOD_ENABLE);
+		if (rc < 0)
+			goto err;
+
+		/* Configure strobe control */
+		if (fnode->strobe_sel == SW_STROBE)
+			strobe_mask = FLASH_LED_HW_SW_STROBE_SEL_BIT;
+		else
+			strobe_mask = FLASH_HW_STROBE_MASK;
+		rc = qpnp_flash_led_masked_write(led,
+				FLASH_LED_REG_STROBE_CTRL(led->base + addr_offset),
+				strobe_mask, fnode->strobe_ctrl);
+		if (rc < 0)
+			goto err;
+
+		/* Set trigger current */
+		rc = qpnp_flash_led_masked_write(led,
+				FLASH_LED_REG_TGR_CURRENT(led->base + addr_offset),
+				FLASH_LED_CURRENT_MASK, fnode->current_reg_val);
+		if (rc < 0)
+			goto err;
+
+		/* Set safety timer duration */
+		rc = qpnp_flash_led_write(led,
+				FLASH_LED_REG_SAFETY_TMR(led->base + addr_offset),
+				fnode->dbg_duration ? fnode->dbg_duration :
+					fnode->duration);
+		if (rc < 0)
+			goto err;
+
+		/* Enable this LED */
+		rc = qpnp_flash_led_masked_write(led,
+				FLASH_LED_EN_LED_CTRL(led->base),
+				FLASH_LED_ENABLE << fnode->id,
+				FLASH_LED_ENABLE << fnode->id);
+		if (rc < 0)
+			goto err;
+
+		fnode->hw_on = true;
+		return;
+	} else {
+		if (!fnode->hw_on)
+			return;
+
+		/* Disable this LED */
+		qpnp_flash_led_masked_write(led,
+				FLASH_LED_EN_LED_CTRL(led->base),
+				FLASH_LED_ENABLE << fnode->id,
+				FLASH_LED_DISABLE);
+
+		/* Disable module if no other fnodes are active */
+		i = 0;
+		while (i < led->num_fnodes) {
+			if (led->fnode[i].led_on &&
+			    &led->fnode[i] != fnode)
+				break;
+			i++;
+		}
+		if (i == led->num_fnodes) {
+			qpnp_flash_led_masked_write(led,
+					FLASH_LED_REG_MOD_CTRL(led->base),
+					FLASH_LED_MOD_CTRL_MASK,
+					FLASH_LED_DISABLE);
+		}
+
+		led->enable--;
+		fnode->hw_on = false;
+		return;
+	}
+err:
+	pr_err("Failed to set torch LED %d HW, rc=%d\n", fnode->id, rc);
 }
 
 static int qpnp_flash_led_switch_disable(struct flash_switch_data *snode)
