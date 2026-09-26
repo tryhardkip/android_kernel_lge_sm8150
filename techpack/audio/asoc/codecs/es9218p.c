@@ -1119,7 +1119,7 @@ static ssize_t set_forced_ess_filter(struct device *dev,
     sscanf(buf, "%d", &input_filter);
 
     if ( es9218_power_state < ESS_PS_HIFI ) {
-        pr_err("%s() : invalid state = %s\n", __func__, power_state[es9218_power_state]);
+        pr_info("%s() : invalid state = %s\n", __func__, power_state[es9218_power_state]);
         return -EINVAL;
     }
 
@@ -1174,7 +1174,7 @@ static ssize_t set_forced_ess_custom_filter(struct device *dev,
 	sscanf(buf, "%s", received_data);
 
 	if ( es9218_power_state < ESS_PS_HIFI ) {
-		pr_err("%s() : invalid state = %s\n", __func__, power_state[es9218_power_state]);
+		pr_info("%s() : invalid state = %s\n", __func__, power_state[es9218_power_state]);
 		kfree(received_data);
 		return -EINVAL;
 	}
