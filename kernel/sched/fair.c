@@ -9442,7 +9442,11 @@ select_cluster_compat_cpu(struct task_struct *p, int prev_cpu, int target_cpu)
 	for_each_online_cpu(i) {
 		struct rq *rq = cpu_rq(i);
 		struct task_struct *curr;
-		unsigned int distance = 0;
+		unsigned int distance;
+
+		/* Never propose a CPU the task is not allowed to run on. */
+		if (!cpumask_test_cpu(i, &p->cpus_allowed))
+			continue;
 
 		rcu_read_lock();
 		curr = rcu_dereference(rq->curr);
@@ -9453,6 +9457,15 @@ select_cluster_compat_cpu(struct task_struct *p, int prev_cpu, int target_cpu)
 		} else if (curr && curr->in_iowait) {
 			/* I/O bound tasks - medium affinity */
 			distance = 2;
+		} else {
+			/*
+			 * No affinity to this CPU's current task. Skip it:
+			 * treating an unrelated (e.g. idle) CPU as distance 0
+			 * would make it outrank a genuine same-mm match and
+			 * herd every wakeup onto the lowest online CPU.
+			 */
+			rcu_read_unlock();
+			continue;
 		}
 
 		rcu_read_unlock();
@@ -10813,8 +10826,12 @@ void update_dynamic_capacity_orig(struct rq *rq)
 	new_capacity *= arch_scale_max_freq_capacity(NULL, cpu);
 	new_capacity >>= SCHED_CAPACITY_SHIFT;
 
-	/* Avoid rapid fluctuations */
-	if (abs(new_capacity - rq->cpu_capacity_orig) >
+	/* Avoid rapid fluctuations. Use an unsigned-safe absolute difference:
+	 * new_capacity and cpu_capacity_orig are unsigned long, so a plain
+	 * subtraction wrapped through abs() would mishandle capacity drops.
+	 */
+	if (max(new_capacity, rq->cpu_capacity_orig) -
+	    min(new_capacity, rq->cpu_capacity_orig) >
 	    (SCHED_CAPACITY_SCALE >> 4)) /* ~6.25% threshold */ {
 		rq->cpu_capacity_orig = new_capacity;
 		if (printk_ratelimit())
