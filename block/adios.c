@@ -1285,8 +1285,19 @@ retry:
 
 	return NULL;
 found:
-	/* 4.14 backport: record the hand-off-to-hardware timestamp */
-	get_rq_data(rq)->io_start_ns = ktime_get_ns();
+	/*
+	 * 4.14 backport: record the hand-off-to-hardware timestamp. A request
+	 * whose rq_data allocation failed (GFP_ATOMIC in adios_prepare_request)
+	 * is dispatched FIFO from the priority queue with a NULL rd, so guard
+	 * the store instead of dereferencing NULL. adios_completed_request()
+	 * bails on the same condition, so the missing timestamp is harmless.
+	 */
+	{
+		struct adios_rq_data *rd = get_rq_data(rq);
+
+		if (likely(rd))
+			rd->io_start_ns = ktime_get_ns();
+	}
 	rq->rq_flags |= RQF_STARTED;
 	return rq;
 }
