@@ -822,7 +822,7 @@ unsigned int sysctl_sched_uclamp_max_filter_divider = 2;
  * This knob will not override the system default sched_util_clamp_min defined
  * above.
  */
-unsigned int sysctl_sched_uclamp_util_min_rt_default = 40; /* Reduced from 96% for active power */
+unsigned int sysctl_sched_uclamp_util_min_rt_default = 96; /* RT freq floor raised from 40 for better touch/audio latency */
 
 /* All clamps are required to be less or equal than these values */
 static struct uclamp_se uclamp_default[UCLAMP_CNT];
@@ -8383,8 +8383,8 @@ static unsigned int uclamp_pct_to_util(unsigned int pct)
 static void uclamp_assist_apply(struct cgroup_subsys_state *css)
 {
 	static const struct uclamp_assist_param tgts[] = {
-		{ "top-app",           30,  -1, 1, 1 },  /* 30-100%: floor foreground ~850MHz (reduced from 50% for active power); tune at runtime via /dev/cpuctl/top-app/cpu.uclamp.min */
-		{ "foreground",         0,  50, 1, 0 },  /* 0-50%: reduced cap for efficiency */
+		{ "top-app",           50,  -1, 1, 1 },  /* 50-100%: aggressive foreground freq floor for snappiest touch/scroll; tune at runtime via /dev/cpuctl/top-app/cpu.uclamp.min */
+		{ "foreground",         0,  60, 1, 0 },  /* 0-60%: more headroom for visible/split-screen apps (raised from 50%) */
 		{ "background",         0,  30, 0, 0 },  /* 0-30%: tighter cap saves power on bg work */
 		{ "system-background",  0,  40, 0, 0 },  /* 0-40% */
 		{ "restricted",         0,  15, 0, 0 },  /* 0-15%   */
