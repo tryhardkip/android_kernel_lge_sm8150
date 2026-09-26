@@ -2295,7 +2295,39 @@ static int gpio_keys_setup_key(struct platform_device *pdev,
 
 	bdata->code = &ddata->keymap[idx];
 	*bdata->code = button->code;
-	input_set_capability(input, button->type ?: EV_KEY, *bdata->code);
+
+	/*
+	 * Some LG boards declare cover/hall pseudo-buttons (e.g. "luke",
+	 * ds2 cover switches) as EV_SW with an out-of-range code (222). Such
+	 * a code exceeds SW_MAX, so input_set_capability() would refuse it and
+	 * dump_stack() at every probe. These buttons are notification-only:
+	 * their state is consumed via the desc-string hallic path in
+	 * gpio_keys_gpio_report_event(), not via the input event itself, so a
+	 * dropped capability changes nothing functionally. Validate the code
+	 * against the event type and skip registration (with a quiet warning)
+	 * instead of tripping the core's stack dump.
+	 */
+	{
+		unsigned int itype = button->type ?: EV_KEY;
+		unsigned int code_max;
+
+		switch (itype) {
+		case EV_KEY: code_max = KEY_MAX; break;
+		case EV_SW:  code_max = SW_MAX;  break;
+		case EV_ABS: code_max = ABS_MAX; break;
+		case EV_REL: code_max = REL_MAX; break;
+		case EV_MSC: code_max = MSC_MAX; break;
+		default:     code_max = 0;        break;
+		}
+
+		if (*bdata->code > code_max)
+			dev_warn(dev,
+				 "button '%s': code %u out of range for type %u, skipping input capability\n",
+				 button->desc ? button->desc : "?",
+				 *bdata->code, itype);
+		else
+			input_set_capability(input, itype, *bdata->code);
+	}
 
 	/*
 	 * Install custom action to cancel release timer and
