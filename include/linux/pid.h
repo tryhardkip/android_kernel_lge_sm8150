@@ -100,7 +100,8 @@ extern void change_pid(struct task_struct *task, enum pid_type,
 extern void transfer_pid(struct task_struct *old, struct task_struct *new,
 			 enum pid_type);
 
-struct pid_namespace;extern struct pid_namespace init_pid_ns;
+struct pid_namespace;
+extern struct pid_namespace init_pid_ns;
 
 /*
  * look up a PID in the hash table. Must be called with the tasklist_lock
