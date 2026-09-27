@@ -2742,7 +2742,16 @@ static inline void uclamp_rq_inc_id(struct rq *rq, struct task_struct *p,
 #ifdef CONFIG_UCLAMP_TASK_GROUP
 static inline bool uclamp_latency_sensitive(struct task_struct *p)
 {
-	struct cgroup_subsys_state *css = task_css(p, cpuset_cgrp_id);
+	/*
+	 * latency_sensitive is set by uclamp_assist on the CPU controller's
+	 * task_group (css_tg, from cpu_cgroup_css_online). Read it back from
+	 * the same hierarchy: task_css(p, cpu_cgrp_id) yields a css that is
+	 * genuinely embedded in a struct task_group. Using cpuset_cgrp_id
+	 * instead reinterprets a struct cpuset as a struct task_group and
+	 * reads latency_sensitive at a bogus offset, so the flag would never
+	 * match what uclamp_assist wrote.
+	 */
+	struct cgroup_subsys_state *css = task_css(p, cpu_cgrp_id);
 	struct task_group *tg;
 
 	if (!css)
@@ -2758,7 +2767,7 @@ static inline bool uclamp_latency_sensitive(struct task_struct *p)
 
 static inline bool uclamp_boosted(struct task_struct *p)
 {
-	struct cgroup_subsys_state *css = task_css(p, cpuset_cgrp_id);
+	struct cgroup_subsys_state *css = task_css(p, cpu_cgrp_id);
 	struct task_group *tg;
 
 	if (!css)
