@@ -1830,7 +1830,13 @@ static ssize_t disksize_store(struct device *dev,
 	struct zram *zram = dev_to_zram(dev);
 	int err;
 
-	disksize = memparse(buf, NULL);
+	/*
+	 * Hardcode zram disksize to 6GB, overriding whatever userspace
+	 * (fs_mgr via fstab zramsize=) writes here. Done in the store path
+	 * so the device is still uninitialized when fs_mgr sets it up, which
+	 * avoids the -EBUSY that pre-initializing at zram_add() would cause.
+	 */
+	disksize = (u64)6144 * 1024 * 1024;
 	if (!disksize)
 		return -EINVAL;
 
