@@ -53,11 +53,46 @@ unsigned long cass_cpu_util(int cpu, bool sync)
 static __always_inline
 bool cass_cpu_better(const struct cass_cpu_cand *a,
 		     const struct cass_cpu_cand *b,
-		     int prev_cpu, bool sync)
+		     int prev_cpu, bool sync, bool prefer_cap)
 {
 #define cass_cmp(a, b) ({ res = (a) - (b); })
 #define cass_eq(a, b) ({ res = (a) == (b); })
 	long res;
+
+	/*
+	 * Bias placement towards the big/prime cluster. This is enabled by the
+	 * caller only for foreground (latency-sensitive, top-app) tasks whose
+	 * genuine demand does not fit on a little CPU -- see cass_best_cpu().
+	 * Under load, plain CASS balancing would spread such bursty tasks onto
+	 * little CPUs to keep relative utilisation even, which strands heavy
+	 * foreground rendering on the slow cluster. This mirrors the foreground
+	 * handling already applied elsewhere in the scheduler stack: BORE exempts
+	 * top-app from the burst penalty and EEVDF halves its request slice.
+	 *
+	 * Two ordered criteria are applied before relative utilisation:
+	 *   1. Prefer a CPU the task fits on (relative util within capacity) over
+	 *      one it would overload, so the group does not pile onto an already-
+	 *      saturated prime CPU.
+	 *   2. Among equally-fitting CPUs, prefer the higher-capacity one so work
+	 *      lands on prime/big rather than little.
+	 * Relative utilisation is retained below as the tie-break between CPUs of
+	 * equal capacity, so the least-loaded big CPU is still chosen. Idle-CPU
+	 * preference is handled by the caller before candidates reach here. Light
+	 * foreground tasks and all non-foreground tasks skip this block, leaving
+	 * stock CASS behaviour (and battery use) unchanged.
+	 */
+	if (prefer_cap) {
+		bool a_fits = a->util <= SCHED_CAPACITY_SCALE;
+		bool b_fits = b->util <= SCHED_CAPACITY_SCALE;
+
+		/* Prefer a CPU the task fits on over one it would overload */
+		if (cass_cmp(a_fits, b_fits))
+			goto done;
+
+		/* Among equally-fitting CPUs, prefer higher capacity */
+		if (cass_cmp(a->cap, b->cap))
+			goto done;
+	}
 
 	/* Prefer the CPU with lower relative utilization */
 	if (cass_cmp(b->util, a->util))
@@ -99,11 +134,34 @@ static int cass_best_cpu(struct task_struct *p, int prev_cpu, bool sync)
 	bool has_idle = false;
 	unsigned long p_util;
 	int cidx = 0, cpu;
+	bool prefer_cap;
 
 	/* Get the utilization for this task */
 	p_util = clamp(task_util_est(p),
 		       uclamp_eff_value(p, UCLAMP_MIN),
 		       uclamp_eff_value(p, UCLAMP_MAX));
+
+	/*
+	 * Decide whether to bias @p towards the big/prime cluster, done once
+	 * here to keep it off the per-CPU comparison hot path. Only foreground
+	 * (latency-sensitive, top-app) tasks whose genuine demand does not fit on
+	 * a little CPU are biased. Raw task_util_est() is used deliberately, not
+	 * the uclamp-clamped p_util above: the top-app uclamp.min floor (~50%)
+	 * already exceeds a little CPU's capacity, so clamped util would flag
+	 * every foreground task -- even trivial ones -- as needing a big CPU and
+	 * waste power. Gating on raw demand keeps light foreground work (and most
+	 * apps) on the little cluster, limiting the battery cost to the heavy,
+	 * jank-prone tasks this is meant to rescue.
+	 */
+	prefer_cap = false;
+	if (uclamp_latency_sensitive(p)) {
+		int min_cpu = cpu_rq(prev_cpu)->rd->min_cap_orig_cpu;
+		unsigned long min_cap = capacity_orig_of(min_cpu >= 0 ?
+							 min_cpu : prev_cpu);
+
+		/* Heavy if raw demand exceeds ~80% of a little CPU. */
+		prefer_cap = task_util_est(p) * 5 > min_cap * 4;
+	}
 
 	/*
 	 * Find the best CPU to wake @p on. Although idle_get_state() requires
@@ -169,7 +227,7 @@ static int cass_best_cpu(struct task_struct *p, int prev_cpu, bool sync)
 			continue;
 
 		/* Check if this CPU is better than the best CPU found */
-		if (cass_cpu_better(curr, best, prev_cpu, sync)) {
+		if (cass_cpu_better(curr, best, prev_cpu, sync, prefer_cap)) {
 			best = curr;
 			cidx ^= 1;
 		}
