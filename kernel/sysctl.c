@@ -269,6 +269,23 @@ static int proc_dostring_coredump(struct ctl_table *table, int write,
 		void __user *buffer, size_t *lenp, loff_t *ppos);
 #endif
 
+/*
+ * Hard-cap vm.swappiness regardless of userspace writes.
+ * Vendor init/perfhal writes 100 at runtime; clamp the effective value so
+ * the write still "succeeds" (no error/log spam, no retry) but reclaim never
+ * sees more than SWAPPINESS_MAX.
+ */
+#define SWAPPINESS_MAX 80
+static int proc_swappiness_capped(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+
+	if (write && vm_swappiness > SWAPPINESS_MAX)
+		vm_swappiness = SWAPPINESS_MAX;
+	return ret;
+}
+
 #ifdef CONFIG_MAGIC_SYSRQ
 /* Note: sysrq code uses it's own private copy */
 static int __sysrq_enabled = CONFIG_MAGIC_SYSRQ_DEFAULT_ENABLE;
@@ -1795,7 +1812,7 @@ static struct ctl_table vm_table[] = {
 		.data		= &vm_swappiness,
 		.maxlen		= sizeof(vm_swappiness),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
+		.proc_handler	= proc_swappiness_capped,
 		.extra1		= &zero,
 		.extra2		= &one_hundred,
 	},
