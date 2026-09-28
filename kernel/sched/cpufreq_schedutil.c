@@ -196,7 +196,9 @@ static void sugov_update_commit(struct sugov_policy *sg_policy, u64 time,
  *
  * next_freq = C * curr_freq * util_raw / max
  *
- * Take C = 1.25 for the frequency tipping point at (util / max) = 0.8.
+ * Take C = 1.125 for the frequency tipping point at (util / max) = 0.89.
+ * (Reduced from 1.25/0.8 to favor efficiency: hold lower frequencies for a
+ * given utilization and only ramp up under heavier load.)
  *
  * The lowest driver-supported frequency which is equal or greater than the raw
  * next_freq (as calculated above) is returned, subject to policy min/max and
@@ -209,7 +211,7 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 	unsigned int freq = arch_scale_freq_invariant() ?
 				policy->cpuinfo.max_freq : policy->cur;
 
-	freq = (freq + (freq >> 2)) * util / max;
+	freq = (freq + (freq >> 3)) * util / max;
 
 	if (freq == sg_policy->cached_raw_freq && sg_policy->next_freq != UINT_MAX)
 		return sg_policy->next_freq;
