@@ -8383,7 +8383,7 @@ static unsigned int uclamp_pct_to_util(unsigned int pct)
 static void uclamp_assist_apply(struct cgroup_subsys_state *css)
 {
 	static const struct uclamp_assist_param tgts[] = {
-		{ "top-app",           90,  -1, 1, 1 },  /* 90-100%: foreground freq floor tuned for perfect-60 Telegram scroll (median under 16.7ms budget); runtime-tunable via /dev/cpuctl/top-app/cpu.uclamp.min */
+		{ "top-app",           50,  -1, 1, 1 },  /* 50-100%: aggressive foreground freq floor for snappiest touch/scroll; tune at runtime via /dev/cpuctl/top-app/cpu.uclamp.min */
 		{ "foreground",         0,  60, 1, 0 },  /* 0-60%: more headroom for visible/split-screen apps (raised from 50%) */
 		{ "background",         0,  30, 0, 0 },  /* 0-30%: tighter cap saves power on bg work */
 		{ "system-background",  0,  40, 0, 0 },  /* 0-40% */
