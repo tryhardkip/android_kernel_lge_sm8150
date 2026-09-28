@@ -8383,12 +8383,12 @@ static unsigned int uclamp_pct_to_util(unsigned int pct)
 static void uclamp_assist_apply(struct cgroup_subsys_state *css)
 {
 	static const struct uclamp_assist_param tgts[] = {
-		{ "top-app",           50,  -1, 1, 1 },  /* 50-100%: aggressive foreground freq floor for snappiest touch/scroll; tune at runtime via /dev/cpuctl/top-app/cpu.uclamp.min */
-		{ "foreground",         0,  60, 1, 0 },  /* 0-60%: more headroom for visible/split-screen apps (raised from 50%) */
-		{ "background",         0,  30, 0, 0 },  /* 0-30%: tighter cap saves power on bg work */
-		{ "system-background",  0,  40, 0, 0 },  /* 0-40% */
-		{ "restricted",         0,  15, 0, 0 },  /* 0-15%   */
-		{ "camera-daemon",     10,  -1, 1, 1 },  /* 10-100% */
+		{ "top-app",           10,  -1, 1, 1 },  /* 10-100%: minimal freq floor, demand-driven; race-to-idle keeps bursts fast without holding clocks up */
+		{ "foreground",         0,  50, 1, 0 },  /* 0-50%: tighter cap for visible/split-screen apps saves power */
+		{ "background",         0,  25, 0, 0 },  /* 0-25%: tighter cap saves power on bg work */
+		{ "system-background",  0,  35, 0, 0 },  /* 0-35% */
+		{ "restricted",         0,  10, 0, 0 },  /* 0-10%   */
+		{ "camera-daemon",     10,  -1, 1, 1 },  /* 10-100%: leave headroom, camera is latency-sensitive */
 	};
 	char name_buf[NAME_MAX + 1];
 	struct task_group *tg = css_tg(css);
