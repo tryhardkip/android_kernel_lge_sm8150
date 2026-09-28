@@ -21,22 +21,6 @@
 
 #define SUGOV_KTHREAD_PRIORITY	50
 
-/*
- * Minimum down_rate_limit_us enforced on the big/prime clusters.
- *
- * On the bursty, latency-sensitive UI-scroll workload schedutil otherwise
- * collapses the big-cluster frequency within the vendor's short down-rate
- * (5-20ms, set by init.qcom.power.rc and the power HAL's powerhint.json)
- * during the idle gap between rendered frames.  Every frame then starts from
- * a low clock and overruns the 16.7ms / 60Hz budget.  Holding the down-ramp
- * for 100ms keeps the big/prime clusters hot across those inter-frame gaps.
- *
- * Enforced as a floor at the sysfs write path so that vendor userspace and
- * the power HAL cannot drop below it at runtime.  The little cluster is left
- * untouched to avoid a battery regression on light single-cluster workloads.
- */
-#define SUGOV_DOWN_RATE_FLOOR_US	100000U
-
 struct sugov_tunables {
 	struct gov_attr_set attr_set;
 	unsigned int		up_rate_limit_us;
@@ -534,33 +518,6 @@ static ssize_t up_rate_limit_us_store(struct gov_attr_set *attr_set,
 	return count;
 }
 
-/* True if the policy drives a big/prime (above-little-capacity) cluster. */
-static bool sugov_policy_is_big_cluster(struct sugov_policy *sg_policy)
-{
-	return capacity_orig_of(sg_policy->policy->cpu) >
-	       (SCHED_CAPACITY_SCALE / 2);
-}
-
-/*
- * Clamp a requested down_rate_limit_us up to SUGOV_DOWN_RATE_FLOOR_US when the
- * tunable set drives a big/prime cluster.  On this SoC schedutil uses
- * per-policy tunables (big and prime carry distinct down-rates at runtime),
- * so each attr_set holds a single cluster and the floor never touches little.
- */
-static unsigned int sugov_apply_down_rate_floor(struct gov_attr_set *attr_set,
-						unsigned int rate_limit_us)
-{
-	struct sugov_policy *sg_policy;
-
-	list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook) {
-		if (sugov_policy_is_big_cluster(sg_policy) &&
-		    rate_limit_us < SUGOV_DOWN_RATE_FLOOR_US)
-			rate_limit_us = SUGOV_DOWN_RATE_FLOOR_US;
-	}
-
-	return rate_limit_us;
-}
-
 static ssize_t down_rate_limit_us_store(struct gov_attr_set *attr_set,
 					const char *buf, size_t count)
 {
@@ -570,8 +527,6 @@ static ssize_t down_rate_limit_us_store(struct gov_attr_set *attr_set,
 
 	if (kstrtouint(buf, 10, &rate_limit_us))
 		return -EINVAL;
-
-	rate_limit_us = sugov_apply_down_rate_floor(attr_set, rate_limit_us);
 
 	tunables->down_rate_limit_us = rate_limit_us;
 
@@ -804,9 +759,6 @@ static int sugov_init(struct cpufreq_policy *policy)
 				cpufreq_policy_transition_delay_us(policy);
 	tunables->down_rate_limit_us =
 				cpufreq_policy_transition_delay_us(policy);
-	if (capacity_orig_of(policy->cpu) > (SCHED_CAPACITY_SCALE / 2) &&
-	    tunables->down_rate_limit_us < SUGOV_DOWN_RATE_FLOOR_US)
-		tunables->down_rate_limit_us = SUGOV_DOWN_RATE_FLOOR_US;
 	tunables->iowait_boost_enable = false;
 
 	policy->governor_data = sg_policy;
