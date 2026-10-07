@@ -190,10 +190,12 @@ u8 sysctl_clean_min_ratio __read_mostly = CONFIG_CLEAN_MIN_RATIO;
  * still honoured). This makes reclaim prefer dropping cheap clean file cache
  * over compressing anon into zram during normal pressure, while the
  * clean_min_ratio floor keeps the hot file working set resident and diverts
- * pressure to anon only under genuine exhaustion. Default off: behaviour is
- * unchanged unless explicitly enabled. Idea borrowed from firelzrd/lru_marie.
+ * pressure to anon only under genuine exhaustion.
+ *
+ * Default ON: reclaim should spare zram by shedding file cache first; turning
+ * it off restores the legacy always-swappiness path.
  */
-int sysctl_low_swappiness_mode __read_mostly;
+int sysctl_low_swappiness_mode __read_mostly = 1;
 static u64 sysctl_anon_min_ratio_kb  __read_mostly = 0;
 static u64 sysctl_clean_low_ratio_kb __read_mostly = 0;
 static u64 sysctl_clean_min_ratio_kb __read_mostly = 0;
@@ -4073,12 +4075,13 @@ static bool age_lruvec(struct lruvec *lruvec, struct scan_control *sc,
 }
 
 /*
- * To protect the working set of the last N jiffies. On 6-8GB devices this is
- * kept short so it complements the le9uo clean-file protection: le9uo keeps the
- * texture/file page cache resident, while a 1s TTL lets cold anonymous pages
- * age into ZRAM instead of forcing premature OOM kills (app/game relaunches).
+ * To protect the working set of the last N jiffies. Kept short so it
+ * complements le9uo clean-file protection: le9uo keeps the texture/file
+ * page cache resident, while a 3s TTL lets cold anonymous pages age into
+ * ZRAM instead of tripping OOM kills. Still runtime-tunable via
+ * /sys/kernel/mm/lru_gen/min_ttl_ms.
  */
-static unsigned long lru_gen_min_ttl __read_mostly = 1 * HZ; // 1000ms
+static unsigned long lru_gen_min_ttl __read_mostly = 3 * HZ; // 3000ms
 
 static void lru_gen_age_node(struct pglist_data *pgdat, struct scan_control *sc)
 {
