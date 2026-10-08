@@ -296,29 +296,25 @@ static const struct f2fs_compress_ops f2fs_lz4_ops = {
 
 static int zstd_init_compress_ctx(struct compress_ctx *cc)
 {
-	ZSTD_parameters params;
 	ZSTD_CStream *stream;
-	void *workspace;
-	unsigned int workspace_size;
 
-	params = ZSTD_getParams(F2FS_ZSTD_DEFAULT_CLEVEL, cc->rlen, 0);
-	workspace_size = ZSTD_CStreamWorkspaceBound(params.cParams);
-
-	workspace = f2fs_kvmalloc(F2FS_I_SB(cc->inode),
-					workspace_size, GFP_NOFS);
-	if (!workspace)
-		return -ENOMEM;
-
-	stream = ZSTD_initCStream(params, 0, workspace, workspace_size);
+	stream = ZSTD_createCStream();
 	if (!stream) {
+		printk_ratelimited("%sF2FS-fs (%s): %s ZSTD_createCStream failed\n",
+				KERN_ERR, F2FS_I_SB(cc->inode)->sb->s_id,
+				__func__);
+		return -ENOMEM;
+	}
+
+	if (ZSTD_isError(ZSTD_initCStream(stream, F2FS_ZSTD_DEFAULT_CLEVEL))) {
+		ZSTD_freeCStream(stream);
 		printk_ratelimited("%sF2FS-fs (%s): %s ZSTD_initCStream failed\n",
 				KERN_ERR, F2FS_I_SB(cc->inode)->sb->s_id,
 				__func__);
-		kvfree(workspace);
 		return -EIO;
 	}
 
-	cc->private = workspace;
+	cc->private = stream;
 	cc->private2 = stream;
 
 	cc->clen = cc->rlen - PAGE_SIZE - COMPRESS_HEADER_SIZE;
@@ -327,7 +323,7 @@ static int zstd_init_compress_ctx(struct compress_ctx *cc)
 
 static void zstd_destroy_compress_ctx(struct compress_ctx *cc)
 {
-	kvfree(cc->private);
+	ZSTD_freeCStream(cc->private);
 	cc->private = NULL;
 	cc->private2 = NULL;
 }
@@ -379,27 +375,16 @@ static int zstd_compress_pages(struct compress_ctx *cc)
 static int zstd_init_decompress_ctx(struct decompress_io_ctx *dic)
 {
 	ZSTD_DStream *stream;
-	void *workspace;
-	unsigned int workspace_size;
 
-	workspace_size = ZSTD_DStreamWorkspaceBound(MAX_COMPRESS_WINDOW_SIZE);
-
-	workspace = f2fs_kvmalloc(F2FS_I_SB(dic->inode),
-					workspace_size, GFP_NOFS);
-	if (!workspace)
-		return -ENOMEM;
-
-	stream = ZSTD_initDStream(MAX_COMPRESS_WINDOW_SIZE,
-					workspace, workspace_size);
+	stream = ZSTD_createDStream();
 	if (!stream) {
-		printk_ratelimited("%sF2FS-fs (%s): %s ZSTD_initDStream failed\n",
+		printk_ratelimited("%sF2FS-fs (%s): %s ZSTD_createDStream failed\n",
 				KERN_ERR, F2FS_I_SB(dic->inode)->sb->s_id,
 				__func__);
-		kvfree(workspace);
-		return -EIO;
+		return -ENOMEM;
 	}
 
-	dic->private = workspace;
+	dic->private = stream;
 	dic->private2 = stream;
 
 	return 0;
@@ -407,7 +392,7 @@ static int zstd_init_decompress_ctx(struct decompress_io_ctx *dic)
 
 static void zstd_destroy_decompress_ctx(struct decompress_io_ctx *dic)
 {
-	kvfree(dic->private);
+	ZSTD_freeDStream(dic->private);
 	dic->private = NULL;
 	dic->private2 = NULL;
 }
