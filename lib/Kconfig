@@ -250,10 +250,12 @@ config LZ4_DECOMPRESS
 
 config ZSTD_COMPRESS
 	select XXHASH
+	select ZSTD_COMMON
 	tristate
 
 config ZSTD_DECOMPRESS
 	select XXHASH
+	select ZSTD_COMMON
 	tristate
 
 config ZSTD_COMMON
