@@ -27,10 +27,8 @@
 #include <linux/buffer_head.h>
 #include <linux/exportfs.h>
 #include <linux/fs.h>
-#include <linux/fs_context.h>
-#include <linux/fs_parser.h>
 #include <linux/log2.h>
-#include <linux/minmax.h>
+#include <linux/parser.h>
 #include <linux/module.h>
 #include <linux/nls.h>
 #include <linux/seq_file.h>
@@ -212,7 +210,7 @@ static inline void put_mount_options(struct ntfs_mount_options *options)
 	kfree(options);
 }
 
-enum Opt {
+enum {
 	Opt_uid,
 	Opt_gid,
 	Opt_umask,
@@ -231,23 +229,32 @@ enum Opt {
 	Opt_err,
 };
 
-static const struct fs_parameter_spec ntfs_fs_parameters[] = {
-	fsparam_u32("uid",			Opt_uid),
-	fsparam_u32("gid",			Opt_gid),
-	fsparam_u32oct("umask",			Opt_umask),
-	fsparam_u32oct("dmask",			Opt_dmask),
-	fsparam_u32oct("fmask",			Opt_fmask),
-	fsparam_flag_no("sys_immutable",	Opt_immutable),
-	fsparam_flag_no("discard",		Opt_discard),
-	fsparam_flag_no("force",		Opt_force),
-	fsparam_flag_no("sparse",		Opt_sparse),
-	fsparam_flag_no("hidden",		Opt_nohidden),
-	fsparam_flag_no("acl",			Opt_acl),
-	fsparam_flag_no("showmeta",		Opt_showmeta),
-	fsparam_flag_no("prealloc",		Opt_prealloc),
-	fsparam_flag_no("acsrules",		Opt_noacsrules),
-	fsparam_string("iocharset",		Opt_iocharset),
-	{}
+static const match_table_t ntfs_tokens = {
+	{ Opt_uid, "uid=%u" },
+	{ Opt_gid, "gid=%u" },
+	{ Opt_umask, "umask=%o" },
+	{ Opt_dmask, "dmask=%o" },
+	{ Opt_fmask, "fmask=%o" },
+	{ Opt_immutable, "sys_immutable" },
+	{ Opt_immutable, "nosys_immutable" },
+	{ Opt_discard, "discard" },
+	{ Opt_discard, "nodiscard" },
+	{ Opt_force, "force" },
+	{ Opt_force, "noforce" },
+	{ Opt_sparse, "sparse" },
+	{ Opt_sparse, "nosparse" },
+	{ Opt_nohidden, "hidden" },
+	{ Opt_nohidden, "nohidden" },
+	{ Opt_showmeta, "showmeta" },
+	{ Opt_showmeta, "noshowmeta" },
+	{ Opt_acl, "acl" },
+	{ Opt_acl, "noacl" },
+	{ Opt_iocharset, "iocharset=%s" },
+	{ Opt_prealloc, "prealloc" },
+	{ Opt_prealloc, "noprealloc" },
+	{ Opt_noacsrules, "acsrules" },
+	{ Opt_noacsrules, "noacsrules" },
+	{ Opt_err, NULL },
 };
 
 /*
@@ -273,126 +280,89 @@ static struct nls_table *ntfs_load_nls(char *nls)
 	return ERR_PTR(-EINVAL);
 }
 
-static int ntfs_fs_parse_param(struct fs_context *fc,
-			       struct fs_parameter *param)
+static int ntfs_parse_options(struct super_block *sb, char *options,
+			       struct ntfs_mount_options *opts)
 {
-	struct ntfs_mount_options *opts = fc->fs_private;
-	struct fs_parse_result result;
-	int opt;
+	substring_t args[MAX_OPT_ARGS];
+	char *p;
+	int token, value;
 
-	opt = fs_parse(fc, ntfs_fs_parameters, param, &result);
-	if (opt < 0)
-		return opt;
-
-	switch (opt) {
-	case Opt_uid:
-		opts->fs_uid = make_kuid(current_user_ns(), result.uint_32);
-		if (!uid_valid(opts->fs_uid))
-			return invalf(fc, "ntfs3: Invalid value for uid.");
-		break;
-	case Opt_gid:
-		opts->fs_gid = make_kgid(current_user_ns(), result.uint_32);
-		if (!gid_valid(opts->fs_gid))
-			return invalf(fc, "ntfs3: Invalid value for gid.");
-		break;
-	case Opt_umask:
-		if (result.uint_32 & ~07777)
-			return invalf(fc, "ntfs3: Invalid value for umask.");
-		opts->fs_fmask_inv = ~result.uint_32;
-		opts->fs_dmask_inv = ~result.uint_32;
-		opts->fmask = 1;
-		opts->dmask = 1;
-		break;
-	case Opt_dmask:
-		if (result.uint_32 & ~07777)
-			return invalf(fc, "ntfs3: Invalid value for dmask.");
-		opts->fs_dmask_inv = ~result.uint_32;
-		opts->dmask = 1;
-		break;
-	case Opt_fmask:
-		if (result.uint_32 & ~07777)
-			return invalf(fc, "ntfs3: Invalid value for fmask.");
-		opts->fs_fmask_inv = ~result.uint_32;
-		opts->fmask = 1;
-		break;
-	case Opt_immutable:
-		opts->sys_immutable = result.negated ? 0 : 1;
-		break;
-	case Opt_discard:
-		opts->discard = result.negated ? 0 : 1;
-		break;
-	case Opt_force:
-		opts->force = result.negated ? 0 : 1;
-		break;
-	case Opt_sparse:
-		opts->sparse = result.negated ? 0 : 1;
-		break;
-	case Opt_nohidden:
-		opts->nohidden = result.negated ? 1 : 0;
-		break;
-	case Opt_acl:
-		if (!result.negated)
+	if (!options)
+		return 0;
+	while ((p = strsep(&options, ",")) != NULL) {
+		if (!*p)
+			continue;
+		token = match_token(p, ntfs_tokens, args);
+		switch (token) {
+		case Opt_uid:
+			if (match_int(&args[0], &value) || value < 0)
+				return -EINVAL;
+			opts->fs_uid = make_kuid(current_user_ns(), value);
+			break;
+		case Opt_gid:
+			if (match_int(&args[0], &value) || value < 0)
+				return -EINVAL;
+			opts->fs_gid = make_kgid(current_user_ns(), value);
+			break;
+		case Opt_umask:
+		case Opt_dmask:
+		case Opt_fmask:
+			if (match_octal(&args[0], &value) || value & ~07777)
+				return -EINVAL;
+			if (token == Opt_umask || token == Opt_dmask) {
+				opts->fs_dmask_inv = ~value;
+				opts->dmask = 1;
+			}
+			if (token == Opt_umask || token == Opt_fmask) {
+				opts->fs_fmask_inv = ~value;
+				opts->fmask = 1;
+			}
+			break;
+		case Opt_immutable:
+			opts->sys_immutable = strcmp(p, "sys_immutable") == 0;
+			break;
+		case Opt_discard:
+			opts->discard = strcmp(p, "discard") == 0;
+			break;
+		case Opt_force:
+			opts->force = strcmp(p, "force") == 0;
+			break;
+		case Opt_sparse:
+			opts->sparse = strcmp(p, "sparse") == 0;
+			break;
+		case Opt_nohidden:
+			opts->nohidden = strcmp(p, "nohidden") == 0;
+			break;
+		case Opt_showmeta:
+			opts->showmeta = strcmp(p, "showmeta") == 0;
+			break;
+		case Opt_acl:
+			if (strcmp(p, "noacl") == 0) {
+				sb->s_flags &= ~SB_POSIXACL;
+				break;
+			}
 #ifdef CONFIG_NTFS3_FS_POSIX_ACL
-			fc->sb_flags |= SB_POSIXACL;
+			sb->s_flags |= SB_POSIXACL;
 #else
-			return invalf(fc, "ntfs3: Support for ACL not compiled in!");
+			return -EINVAL;
 #endif
-		else
-			fc->sb_flags &= ~SB_POSIXACL;
-		break;
-	case Opt_showmeta:
-		opts->showmeta = result.negated ? 0 : 1;
-		break;
-	case Opt_iocharset:
-		kfree(opts->nls_name);
-		opts->nls_name = param->string;
-		param->string = NULL;
-		break;
-	case Opt_prealloc:
-		opts->prealloc = result.negated ? 0 : 1;
-		break;
-	case Opt_noacsrules:
-		opts->noacsrules = result.negated ? 1 : 0;
-		break;
-	default:
-		/* Should not be here unless we forget add case. */
-		return -EINVAL;
+			break;
+		case Opt_iocharset:
+			kfree(opts->nls_name);
+			opts->nls_name = match_strdup(&args[0]);
+			if (!opts->nls_name)
+				return -ENOMEM;
+			break;
+		case Opt_prealloc:
+			opts->prealloc = strcmp(p, "prealloc") == 0;
+			break;
+		case Opt_noacsrules:
+			opts->noacsrules = strcmp(p, "noacsrules") == 0;
+			break;
+		default:
+			return -EINVAL;
+		}
 	}
-	return 0;
-}
-
-static int ntfs_fs_reconfigure(struct fs_context *fc)
-{
-	struct super_block *sb = fc->root->d_sb;
-	struct ntfs_sb_info *sbi = sb->s_fs_info;
-	struct ntfs_mount_options *new_opts = fc->fs_private;
-	int ro_rw;
-
-	ro_rw = sb_rdonly(sb) && !(fc->sb_flags & SB_RDONLY);
-	if (ro_rw && (sbi->flags & NTFS_FLAGS_NEED_REPLAY)) {
-		errorf(fc, "ntfs3: Couldn't remount rw because journal is not replayed. Please umount/remount instead\n");
-		return -EINVAL;
-	}
-
-	new_opts->nls = ntfs_load_nls(new_opts->nls_name);
-	if (IS_ERR(new_opts->nls)) {
-		new_opts->nls = NULL;
-		errorf(fc, "ntfs3: Cannot load iocharset %s", new_opts->nls_name);
-		return -EINVAL;
-	}
-	if (new_opts->nls != sbi->options->nls)
-		return invalf(fc, "ntfs3: Cannot use different iocharset when remounting!");
-
-	sync_filesystem(sb);
-
-	if (ro_rw && (sbi->volume.flags & VOLUME_FLAG_DIRTY) &&
-	    !new_opts->force) {
-		errorf(fc, "ntfs3: Volume is dirty and \"force\" flag is not set!");
-		return -EINVAL;
-	}
-
-	swap(sbi->options, fc->fs_private);
-
 	return 0;
 }
 
@@ -590,6 +560,56 @@ static int ntfs_sync_fs(struct super_block *sb, int wait)
 	return err;
 }
 
+static int ntfs_remount(struct super_block *sb, int *flags, char *data)
+{
+	struct ntfs_sb_info *sbi = sb->s_fs_info;
+	struct ntfs_mount_options *opts;
+	int err;
+	bool ro_rw = sb_rdonly(sb) && !(*flags & MS_RDONLY);
+
+	if (ro_rw && (sbi->flags & NTFS_FLAGS_NEED_REPLAY))
+		return -EINVAL;
+
+	opts = kzalloc(sizeof(*opts), GFP_NOFS);
+	if (!opts)
+		return -ENOMEM;
+	opts->fs_uid = current_uid();
+	opts->fs_gid = current_gid();
+	opts->fs_fmask_inv = ~current_umask();
+	opts->fs_dmask_inv = ~current_umask();
+
+	err = ntfs_parse_options(sb, data, opts);
+	if (err)
+		goto out_free;
+
+	opts->nls = ntfs_load_nls(opts->nls_name);
+	if (IS_ERR(opts->nls)) {
+		opts->nls = NULL;
+		err = -EINVAL;
+		goto out_free;
+	}
+	if (opts->nls != sbi->options->nls) {
+		err = -EINVAL;
+		goto out_free;
+	}
+
+	sync_filesystem(sb);
+	if (ro_rw && (sbi->volume.flags & VOLUME_FLAG_DIRTY) && !opts->force) {
+		err = -EINVAL;
+		goto out_free;
+	}
+
+	/* Keep the loaded NLS table when replacing mount options. */
+	sbi->options->nls = NULL;
+	put_mount_options(sbi->options);
+	sbi->options = opts;
+	return 0;
+
+out_free:
+	put_mount_options(opts);
+	return err;
+}
+
 static const struct super_operations ntfs_sops = {
 	.alloc_inode = ntfs_alloc_inode,
 	.destroy_inode = ntfs_destroy_inode,
@@ -599,6 +619,7 @@ static const struct super_operations ntfs_sops = {
 	.show_options = ntfs_show_options,
 	.sync_fs = ntfs_sync_fs,
 	.write_inode = ntfs3_write_inode,
+	.remount_fs = ntfs_remount,
 };
 
 static struct inode *ntfs_export_get_inode(struct super_block *sb, u64 ino,
@@ -882,11 +903,12 @@ out:
 /*
  * ntfs_fill_super - Try to mount.
  */
-static int ntfs_fill_super(struct super_block *sb, struct fs_context *fc)
+static int ntfs_fill_super(struct super_block *sb, void *data, int silent)
 {
 	int err;
-	struct ntfs_sb_info *sbi = sb->s_fs_info;
-	struct block_device *bdev = sb->s_bdev;
+	struct ntfs_sb_info *sbi;
+	struct ntfs_mount_options *opts;
+	struct block_device *bdev;
 	struct request_queue *rq;
 	struct inode *inode;
 	struct ntfs_inode *ni;
@@ -899,11 +921,42 @@ static int ntfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	u16 *shared;
 	struct MFT_REF ref;
 
+	sbi = kzalloc(sizeof(*sbi), GFP_KERNEL);
+	if (!sbi)
+		return -ENOMEM;
+	opts = kzalloc(sizeof(*opts), GFP_KERNEL);
+	if (!opts) {
+		kfree(sbi);
+		return -ENOMEM;
+	}
+	opts->fs_uid = current_uid();
+	opts->fs_gid = current_gid();
+	opts->fs_fmask_inv = ~current_umask();
+	opts->fs_dmask_inv = ~current_umask();
+	sbi->options = opts;
+	sb->s_fs_info = sbi;
+	sbi->upcase = kvmalloc(0x10000 * sizeof(short), GFP_KERNEL);
+	if (!sbi->upcase) {
+		err = -ENOMEM;
+		goto out;
+	}
+	ratelimit_state_init(&sbi->msg_ratelimit, DEFAULT_RATELIMIT_INTERVAL,
+			     DEFAULT_RATELIMIT_BURST);
+	mutex_init(&sbi->compress.mtx_lznt);
+#ifdef CONFIG_NTFS3_LZX_XPRESS
+	mutex_init(&sbi->compress.mtx_xpress);
+	mutex_init(&sbi->compress.mtx_lzx);
+#endif
+
+	err = ntfs_parse_options(sb, data, opts);
+	if (err)
+		goto out;
+
+	bdev = sb->s_bdev;
+	rq = NULL;
 	ref.high = 0;
 
 	sbi->sb = sb;
-	sbi->options = fc->fs_private;
-	fc->fs_private = NULL;
 	sb->s_flags |= SB_NODIRATIME;
 	sb->s_magic = 0x7366746e; // "ntfs"
 	sb->s_op = &ntfs_sops;
@@ -914,13 +967,13 @@ static int ntfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	sbi->options->nls = ntfs_load_nls(sbi->options->nls_name);
 	if (IS_ERR(sbi->options->nls)) {
 		sbi->options->nls = NULL;
-		errorf(fc, "Cannot load nls %s", sbi->options->nls_name);
+		ntfs_err(sb, "Cannot load nls %s", sbi->options->nls_name);
 		err = -EINVAL;
 		goto out;
 	}
 
 	rq = bdev_get_queue(bdev);
-	if (blk_queue_discard(rq) && rq->limits.discard_granularity) {
+	if (rq && blk_queue_discard(rq) && rq->limits.discard_granularity) {
 		sbi->discard_granularity = rq->limits.discard_granularity;
 		sbi->discard_granularity_mask_inv =
 			~(u64)(sbi->discard_granularity - 1);
@@ -1272,10 +1325,6 @@ load_root:
 put_inode_out:
 	iput(inode);
 out:
-	/*
-	 * Free resources here.
-	 * ntfs_fs_free will be called with fc->s_fs_info = NULL
-	 */
 	put_mount_options(sbi->options);
 	put_ntfs(sbi);
 	sb->s_fs_info = NULL;
@@ -1349,100 +1398,19 @@ int ntfs_discard(struct ntfs_sb_info *sbi, CLST lcn, CLST len)
 	return err;
 }
 
-static int ntfs_fs_get_tree(struct fs_context *fc)
+static struct dentry *ntfs_fs_mount(struct file_system_type *fs_type,
+		int flags, const char *dev_name, void *data)
 {
-	return get_tree_bdev(fc, ntfs_fill_super);
+	return mount_bdev(fs_type, flags, dev_name, data, ntfs_fill_super);
 }
 
-/*
- * ntfs_fs_free - Free fs_context.
- *
- * Note that this will be called after fill_super and reconfigure
- * even when they pass. So they have to take pointers if they pass.
- */
-static void ntfs_fs_free(struct fs_context *fc)
-{
-	struct ntfs_mount_options *opts = fc->fs_private;
-	struct ntfs_sb_info *sbi = fc->s_fs_info;
-
-	if (sbi)
-		put_ntfs(sbi);
-
-	if (opts)
-		put_mount_options(opts);
-}
-
-static const struct fs_context_operations ntfs_context_ops = {
-	.parse_param	= ntfs_fs_parse_param,
-	.get_tree	= ntfs_fs_get_tree,
-	.reconfigure	= ntfs_fs_reconfigure,
-	.free		= ntfs_fs_free,
-};
-
-/*
- * ntfs_init_fs_context - Initialize spi and opts
- *
- * This will called when mount/remount. We will first initialize
- * options so that if remount we can use just that.
- */
-static int ntfs_init_fs_context(struct fs_context *fc)
-{
-	struct ntfs_mount_options *opts;
-	struct ntfs_sb_info *sbi;
-
-	opts = kzalloc(sizeof(struct ntfs_mount_options), GFP_NOFS);
-	if (!opts)
-		return -ENOMEM;
-
-	/* Default options. */
-	opts->fs_uid = current_uid();
-	opts->fs_gid = current_gid();
-	opts->fs_fmask_inv = ~current_umask();
-	opts->fs_dmask_inv = ~current_umask();
-
-	if (fc->purpose == FS_CONTEXT_FOR_RECONFIGURE)
-		goto ok;
-
-	sbi = kzalloc(sizeof(struct ntfs_sb_info), GFP_NOFS);
-	if (!sbi)
-		goto free_opts;
-
-	sbi->upcase = kvmalloc(0x10000 * sizeof(short), GFP_KERNEL);
-	if (!sbi->upcase)
-		goto free_sbi;
-
-	ratelimit_state_init(&sbi->msg_ratelimit, DEFAULT_RATELIMIT_INTERVAL,
-			     DEFAULT_RATELIMIT_BURST);
-
-	mutex_init(&sbi->compress.mtx_lznt);
-#ifdef CONFIG_NTFS3_LZX_XPRESS
-	mutex_init(&sbi->compress.mtx_xpress);
-	mutex_init(&sbi->compress.mtx_lzx);
-#endif
-
-	fc->s_fs_info = sbi;
-ok:
-	fc->fs_private = opts;
-	fc->ops = &ntfs_context_ops;
-
-	return 0;
-free_sbi:
-	kfree(sbi);
-free_opts:
-	kfree(opts);
-	return -ENOMEM;
-}
-
-// clang-format off
 static struct file_system_type ntfs_fs_type = {
 	.owner			= THIS_MODULE,
 	.name			= "ntfs3",
-	.init_fs_context	= ntfs_init_fs_context,
-	.parameters		= ntfs_fs_parameters,
+	.mount			= ntfs_fs_mount,
 	.kill_sb		= kill_block_super,
 	.fs_flags		= FS_REQUIRES_DEV,
 };
-// clang-format on
 
 static int __init init_ntfs_fs(void)
 {
