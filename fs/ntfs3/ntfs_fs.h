@@ -957,6 +957,30 @@ static inline size_t ntfs3_bitmap_size(size_t bits)
 	return BITS_TO_U64(bits) * sizeof(u64);
 }
 
+/*
+ * Convert file mode to dirent type (shim for kernels predating the
+ * upstream fs_umode_to_dtype() helper).
+ */
+static inline u8 ntfs3_umode_to_dtype(unsigned int mode)
+{
+	if (S_ISREG(mode))
+		return DT_REG;
+	else if (S_ISDIR(mode))
+		return DT_DIR;
+	else if (S_ISCHR(mode))
+		return DT_CHR;
+	else if (S_ISBLK(mode))
+		return DT_BLK;
+	else if (S_ISFIFO(mode))
+		return DT_FIFO;
+	else if (S_ISLNK(mode))
+		return DT_LNK;
+	else if (S_ISSOCK(mode))
+		return DT_SOCK;
+	else
+		return DT_UNKNOWN;
+}
+
 #define _100ns2seconds 10000000
 #define SecondsToStartOf1970 0x00000002B6109100
 

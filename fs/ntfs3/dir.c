@@ -334,7 +334,7 @@ static inline bool ntfs_dir_emit(struct ntfs_sb_info *sbi,
 	    ino != ni->mi.rno) {
 		struct inode *inode = ntfs_iget5(sbi->sb, &e->ref, NULL);
 		if (!IS_ERR_OR_NULL(inode)) {
-			dt_type = fs_umode_to_dtype(inode->i_mode);
+			dt_type = ntfs3_umode_to_dtype(inode->i_mode);
 			iput(inode);
 		}
 	}
