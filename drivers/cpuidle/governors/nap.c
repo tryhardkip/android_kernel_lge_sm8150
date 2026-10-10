@@ -976,7 +976,13 @@ static inline void nap_selftest(void) { }
 
 static struct cpuidle_governor nap_governor = {
 	.name	= "nap",
-	.rating	= 18,
+	/*
+	 * Rated above teo (50) so nap is selected as the default cpuidle
+	 * governor at boot. cpuidle_register_governor() picks the highest
+	 * rated registered governor. Switchable at runtime via
+	 * /sys/devices/system/cpu/cpuidle/current_governor.
+	 */
+	.rating	= 60,
 	.enable	= nap_enable_device,
 	.select	= nap_select,
 	.reflect = nap_reflect,
