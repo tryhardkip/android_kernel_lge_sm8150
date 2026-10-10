@@ -4844,6 +4844,24 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	 */
 	if (!curr)
 		place_entity(cfs_rq, se, 0);
+
+#ifdef CONFIG_SCHED_BORE
+	/*
+	 * BORE 7.0.0 sleep credit: on a genuine wakeup, pull the freshly
+	 * placed virtual deadline earlier by the task's capped sleep time so
+	 * an interactive task that just woke is picked sooner by pick_eevdf().
+	 * Gated behind the credit static key and only for tasks (not groups).
+	 */
+	if (!curr &&
+	    static_branch_likely(&sched_bore_key) &&
+	    static_branch_unlikely(&sched_credit_key) &&
+	    entity_is_task(se) && (flags & ENQUEUE_WAKEUP)) {
+		u64 credit = bore_credit_ns(task_of(se));
+
+		if (credit && se->deadline > credit)
+			se->deadline -= credit;
+	}
+#endif /* CONFIG_SCHED_BORE */
 #endif
 
 	if (flags & ENQUEUE_WAKEUP) {
@@ -6271,6 +6289,18 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	 * current task is not more accounted for in the selection of the OPP.
 	 */
 	schedtune_dequeue_task(p, cpu_of(rq));
+
+#ifdef CONFIG_SCHED_BORE
+	/*
+	 * BORE 7.0.0 sleep credit: record the moment this task goes to sleep
+	 * so the next wakeup can shorten its virtual deadline (see the credit
+	 * consumption in enqueue_entity()). Only on a genuine sleep dequeue.
+	 */
+	if (task_sleep && entity_is_task(se) &&
+	    static_branch_likely(&sched_bore_key) &&
+	    static_branch_unlikely(&sched_credit_key))
+		bore_note_sleep(p, rq_clock(rq));
+#endif /* CONFIG_SCHED_BORE */
 
 	for_each_sched_entity(se) {
 		cfs_rq = cfs_rq_of(se);

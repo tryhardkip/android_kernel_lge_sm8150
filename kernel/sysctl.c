@@ -144,6 +144,7 @@ extern u8   sched_burst_smoothness;
 extern u8   sched_burst_penalty_offset;
 extern uint sched_burst_penalty_scale;
 extern uint sched_burst_cache_lifetime;
+extern uint sched_credit_cap_us;
 extern int  sysctl_sched_min_base_slice;
 extern uint sysctl_sched_base_slice;
 
@@ -153,9 +154,12 @@ extern int sched_burst_inherit_type_update_handler(struct ctl_table *table,
 		int write, void __user *buffer, size_t *lenp, loff_t *ppos);
 extern int sched_burst_protect_slice_lv_update_handler(struct ctl_table *table,
 		int write, void __user *buffer, size_t *lenp, loff_t *ppos);
+extern int sched_credit_cap_us_update_handler(struct ctl_table *table,
+		int write, void __user *buffer, size_t *lenp, loff_t *ppos);
 
 static int __maybe_unused sixty_four     = 64;
 static int __maybe_unused maxval_12_bits = 4095;
+static int __maybe_unused maxval_1_million = 1000000;
 #endif /* CONFIG_SCHED_BORE */
 #endif
 
@@ -1595,6 +1599,15 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= sched_burst_protect_slice_lv_update_handler,
 		.extra1		= &zero,
 		.extra2		= &three,
+	},
+	{
+		.procname	= "sched_credit_cap_us",
+		.data		= &sched_credit_cap_us,
+		.maxlen		= sizeof(uint),
+		.mode		= 0644,
+		.proc_handler	= sched_credit_cap_us_update_handler,
+		.extra1		= &zero,
+		.extra2		= &maxval_1_million,
 	},
 #endif /* CONFIG_SCHED_BORE */
 	{

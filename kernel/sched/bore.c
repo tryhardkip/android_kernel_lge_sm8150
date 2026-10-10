@@ -3,7 +3,7 @@
  *  Burst-Oriented Response Enhancer (BORE) CPU Scheduler
  *  Copyright (C) 2021-2025 Masahito Suzuki <firelzrd@gmail.com>
  *
- *  Selective backport of BORE 6.8.0 to the 4.14 kernel tree.
+ *  Selective backport of BORE 7.0.0 to the 4.14 kernel tree.
  *
  *  Adaptation notes:
  *  - The upstream 6.8.0 patch introduces a struct bore_ctx in task_struct
@@ -30,8 +30,28 @@ u8   __read_mostly sched_burst_inherit_type    = 2;
 u8   __read_mostly sched_burst_protect_slice_lv = 1;
 u8   __read_mostly sched_burst_smoothness      = 1;
 u8   __read_mostly sched_burst_penalty_offset  = 24;
-uint __read_mostly sched_burst_penalty_scale   = 1536;
+/*
+ * penalty_scale softened 1536 -> 1280: CASS handles capacity-aware
+ * placement and PELT half-life 16 reacts to bursts quickly, so BORE can
+ * demote bursty tasks more gently and avoid skewing the load.weight that
+ * feeds CASS/uclamp. offset=24 keeps the ~8.4ms (>2.5 slice) penalty
+ * threshold, which is already lenient at HZ=300.
+ */
+uint __read_mostly sched_burst_penalty_scale   = 1280;
 uint __read_mostly sched_burst_cache_lifetime  = 75000000;
+
+/*
+ * BORE 7.0.0 sleep-credit cap (microseconds).
+ *
+ * Tuned for this tree's scheduler stack rather than the upstream 16000us
+ * desktop default:
+ *   - HZ=300 => EEVDF base_slice ~= 1 tick ~= 3.33ms. 6000us is ~1.8
+ *     slices of deadline pull, enough to win the next pick without
+ *     overriding CASS placement or starving the little cluster.
+ *   - PELT half-life 16 + fast-decay already restores responsiveness on
+ *     wakeup, so the credit only needs to cover sub-frame wake latency.
+ */
+uint __read_mostly sched_credit_cap_us         = 6000;
 
 int __read_mostly sysctl_sched_min_base_slice = 62;
 
@@ -50,6 +70,38 @@ DEFINE_STATIC_KEY_TRUE(sched_burst_inherit_key);
 DEFINE_STATIC_KEY_TRUE(sched_burst_ancestor_key);
 DEFINE_STATIC_KEY_TRUE(sched_burst_protect_slice_cond_key);
 DEFINE_STATIC_KEY_FALSE(sched_burst_protect_slice_prefer_key);
+DEFINE_STATIC_KEY_FALSE(sched_credit_key);
+
+/*
+ * BORE 7.0.0 sleep credit.
+ *
+ * bore_note_sleep() stamps the time a task goes to sleep (called from the
+ * DEQUEUE_SLEEP path).  On the next wakeup, bore_credit_ns() returns the
+ * capped sleep duration, which place_entity()'s caller uses to pull the
+ * task's virtual deadline earlier so a freshly woken interactive task is
+ * picked sooner.  State lives in se->credit_sleep (zeroed by
+ * reset_task_bore()).
+ */
+void bore_note_sleep(struct task_struct *p, u64 now)
+{
+	p->se.credit_sleep = now;
+}
+
+u64 bore_credit_ns(struct task_struct *p)
+{
+	u64 cap = (u64)sched_credit_cap_us * 1000ULL;
+	u64 slept, credit = 0;
+
+	if (p->se.credit_sleep) {
+		slept = rq_clock(task_rq(p)) - p->se.credit_sleep;
+		if ((s64)slept > 0) {
+			p->se.credit_sleep = 0;
+			credit = slept < cap ? slept : cap;
+		}
+	}
+
+	return credit;
+}
 
 /*
  * Fixed-point logarithm: returns floor(log2(v)) + 1 in fixed-point with
@@ -471,6 +523,20 @@ int sched_burst_protect_slice_lv_update_handler(struct ctl_table *table,
 	return 0;
 }
 
+int sched_credit_cap_us_update_handler(struct ctl_table *table,
+		int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret = proc_douintvec_minmax(table, write, buffer, lenp, ppos);
+	if (ret || !write)
+		return ret;
+
+	if (sched_credit_cap_us)
+		static_branch_enable(&sched_credit_key);
+	else
+		static_branch_disable(&sched_credit_key);
+	return 0;
+}
+
 void sched_bore_update_key(void)
 {
 	if (sched_bore)
@@ -507,6 +573,9 @@ void __init sched_init_bore(void)
 	reset_task_bore(&init_task);
 	update_inherit_type();
 	update_protect_slice_lv();
+
+	if (sched_credit_cap_us)
+		static_branch_enable(&sched_credit_key);
 }
 
 #endif /* CONFIG_SCHED_BORE */

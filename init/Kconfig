@@ -1174,6 +1174,10 @@ config SCHED_BORE
 	  With a little impact to scheduling fairness, it may improve
 	  responsiveness especially under heavy background workload.
 
+	  7.0.0 adds a sleep credit (sched_credit_cap_us) that shortens the
+	  virtual deadline of a freshly woken task by its capped sleep time,
+	  improving wake-up latency for interactive tasks.
+
 	  If unsure, say Y here.
 
 config SCHED_EEVDF

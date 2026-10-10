@@ -548,6 +548,13 @@ struct sched_entity {
 #endif /* CONFIG_SCHED_EEVDF */
 #ifdef CONFIG_SCHED_BORE
 	u64				burst_time;
+	/*
+	 * BORE 7.0.0 sleep credit: timestamp (rq_clock) of the moment this
+	 * task went to sleep. On the next wakeup place_entity() shortens the
+	 * virtual deadline by the capped sleep duration. Lives inside the
+	 * reset_task_bore() memset window (burst_time..nr_migrations).
+	 */
+	u64				credit_sleep;
 	u16				prev_burst_penalty;
 	u16				curr_burst_penalty;
 	u16				burst_penalty;
