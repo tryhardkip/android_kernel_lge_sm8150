@@ -304,6 +304,38 @@ config CLOCK_CPU_OSM
 	 existence of multiple OSM domains.
 	 Say Y if you want to support OSM clocks.
 
+config SM8150_CPU7_OC
+	bool "Overclock the SM8150 prime core (cpu7) via OSM LUT override"
+	depends on CLOCK_CPU_OSM
+	default n
+	help
+	 Reprogram the top perf-plus (perfpcl / cpu7) OSM LUT entry with a
+	 higher PLL L-value so the prime core can clock above its stock
+	 ceiling. The target frequency is derived as 19.2MHz * L-value and
+	 selected by SM8150_CPU7_OC_LVAL.
+
+	 This only takes effect if the hardware/TZ accepts the LUT write
+	 (a read-back check logs a warning if it is rejected). The higher
+	 clock reuses the stock top CPR voltage corner, so stability is
+	 silicon-dependent and the result is subject to thermal throttling.
+
+	 Leave disabled unless you have validated stability on your device.
+	 If unsure, say N.
+
+config SM8150_CPU7_OC_LVAL
+	int "SM8150 cpu7 OC PLL L-value"
+	depends on SM8150_CPU7_OC
+	range 148 165
+	default 156
+	help
+	 PLL L-value for the overclocked top perfpcl pstate. Resulting
+	 frequency is 19.2MHz * this value. Reference points:
+	   148 = 2841.6 MHz (stock)
+	   154 = 2956.8 MHz (855+ bin)
+	   156 = 2995.2 MHz (~3.0 GHz, default)
+	   161 = 3091.2 MHz (~3.1 GHz)
+	 Higher values increase instability and heat. Validate carefully.
+
 config CLOCK_CPU_OSM_660
 	tristate "OSM CPU Clock Controller for SDM660"
 	depends on COMMON_CLK_QCOM

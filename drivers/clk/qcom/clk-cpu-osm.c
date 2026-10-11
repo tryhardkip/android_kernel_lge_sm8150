@@ -1242,6 +1242,47 @@ static int clk_cpu_osm_driver_probe(struct platform_device *pdev)
 				rc);
 			return rc;
 		}
+
+#ifdef CONFIG_SM8150_CPU7_OC
+		/*
+		 * Overclock cpu7: rewrite the top perfpcl LUT entry's PLL
+		 * L-value in hardware, then fix up the driver bookkeeping so
+		 * cpufreq exposes the new ceiling. Only effective if the HW/TZ
+		 * accepts the LUT write (read-back check below). The higher
+		 * clock reuses the stock top CPR voltage corner, so stability
+		 * is silicon-dependent.
+		 */
+		{
+			struct clk_osm *c = &perfpcl_clk;
+
+			if (c->num_entries) {
+				u32 top = c->num_entries - 1;
+				u32 off = FREQ_REG + top * OSM_REG_SIZE;
+				u32 data = clk_osm_read_reg(c, off);
+				u32 lval = CONFIG_SM8150_CPU7_OC_LVAL;
+
+				/* keep src bits [31:30], replace lval [7:0] */
+				data = (data & ~GENMASK(7, 0)) |
+					(lval & GENMASK(7, 0));
+				clk_osm_write_reg(c, data, off);
+
+				if ((clk_osm_read_reg(c, off) & GENMASK(7, 0))
+						!= lval) {
+					dev_warn(&pdev->dev,
+						"cpu7 OC: LUT write rejected by HW/TZ, OC not applied\n");
+				} else {
+					unsigned long freq = XO_RATE * lval;
+
+					c->osm_table[top].frequency = freq;
+					osm_clks_init[c->cluster_num].rate_max[top]
+						= freq;
+					dev_info(&pdev->dev,
+						"cpu7 OC: perfpcl top pstate set to %lu Hz (lval=%u)\n",
+						freq, lval);
+				}
+			}
+		}
+#endif /* CONFIG_SM8150_CPU7_OC */
 	}
 
 	if (!is_trinket)

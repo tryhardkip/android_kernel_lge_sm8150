@@ -50,7 +50,15 @@
 		<2323200>,
 		<2534400>,
 		<2841600>,
-		<2956800>;
+		<2956800>,
+		/*
+		 * cpu7 OC steps. These only become selectable when
+		 * CONFIG_SM8150_CPU7_OC raises the top perfpcl LUT entry;
+		 * otherwise clk_round_rate() rounds them down to 2956800
+		 * and the cpufreq parser dedups them away.
+		 */
+		<2995200>,
+		<3091200>;
 };
 
 &mdss_mdp {
