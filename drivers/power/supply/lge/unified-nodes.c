@@ -1204,6 +1204,18 @@ static ssize_t factory_bd_therm_show(struct device* dev, struct device_attribute
 
 /* --- QC recover: force renegotiate QC2/QC3 to 9V without a reboot --- */
 
+struct smb_charger;
+
+/* Auto-recovery: periodically check if QC3/HVDCP is stuck at 5V and
+ * auto-trigger wa_qc_recover(). */
+#define QC_RECOVER_CHECK_INTERVAL_MS  30000   /* check every 30 s */
+#define QC_RECOVER_STUCK_THRESHOLD_MV  6000    /* VBUS < 6 V = stuck */
+#define QC_RECOVER_MIN_CURRENT_MA      1200    /* I_BAT < 1200 mA = stuck */
+
+static struct delayed_work qc_recover_delayed_work;
+static struct work_struct  qc_recover_dwork;
+static bool qc_recover_auto_enabled = true;
+
 static void qc_recover_work(struct work_struct *work)
 {
 	struct power_supply *psy = power_supply_get_by_name("battery");
@@ -1224,7 +1236,62 @@ static void qc_recover_work(struct work_struct *work)
 	if (wa_qc_recover(chg) == 0)
 		pr_uninode("qc_recover: done\n");
 }
-static DECLARE_WORK(qc_recover_dwork, qc_recover_work);
+
+static void qc_recover_check_work(struct work_struct *work)
+{
+	struct power_supply *usb_psy, batt_psy;
+	union power_supply_propval val;
+	int vnow_mv = 0, iusb_ma = 0, real_type;
+
+	usb_psy  = power_supply_get_by_name("usb");
+	batt_psy = power_supply_get_by_name("battery");
+
+	if (!usb_psy || !batt_psy) {
+		schedule_delayed_work(&qc_recover_delayed_work,
+				    msecs_to_jiffies(QC_RECOVER_CHECK_INTERVAL_MS));
+		return;
+	}
+
+	if (power_supply_get_property(usb_psy, POWER_SUPPLY_PROP_REAL_TYPE, &val) < 0) {
+		power_supply_put(usb_psy);
+		power_supply_put(batt_psy);
+		schedule_delayed_work(&qc_recover_delayed_work,
+				    msecs_to_jiffies(QC_RECOVER_CHECK_INTERVAL_MS));
+		return;
+	}
+	real_type = val.intval;
+
+	/* Only auto-recover HVDCP3 (QC3) sessions */
+	if (real_type != POWER_SUPPLY_TYPE_USB_HVDCP_3) {
+		power_supply_put(usb_psy);
+		power_supply_put(batt_psy);
+		schedule_delayed_work(&qc_recover_delayed_work,
+				    msecs_to_jiffies(QC_RECOVER_CHECK_INTERVAL_MS));
+		return;
+	}
+
+	if (power_supply_get_property(usb_psy, POWER_SUPPLY_PROP_VOLTAGE_NOW, &val) == 0)
+		vnow_mv = val.intval / 1000;
+	if (power_supply_get_property(batt_psy, POWER_SUPPLY_PROP_CURRENT_NOW, &val) == 0)
+		iusb_ma = abs(val.intval) / 1000;
+
+	power_supply_put(usb_psy);
+	power_supply_put(batt_psy);
+
+	if (vnow_mv > 0 &&
+	    vnow_mv < QC_RECOVER_STUCK_THRESHOLD_MV &&
+	    iusb_ma < QC_RECOVER_MIN_CURRENT_MA) {
+		pr_uninode("qc_recover_auto: stuck (VUSB=%d mV, IBAT=%d mA), triggering recover\n",
+			    vnow_mv, iusb_ma);
+		schedule_work(&qc_recover_dwork);
+	} else {
+		pr_uninode("qc_recover_auto: healthy (VUSB=%d mV, IBAT=%d mA)\n",
+			    vnow_mv, iusb_ma);
+	}
+
+	schedule_delayed_work(&qc_recover_delayed_work,
+			    msecs_to_jiffies(QC_RECOVER_CHECK_INTERVAL_MS));
+}
 
 static ssize_t qc_recover_store(struct device *dev, struct device_attribute *attr,
 				    const char *buf, size_t size)
@@ -1235,9 +1302,31 @@ static ssize_t qc_recover_store(struct device *dev, struct device_attribute *att
 	}
 	return size;
 }
+
 static ssize_t qc_recover_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return snprintf(buf, PAGE_SIZE, "%d\n", wa_qc_recover_is_running());
+}
+
+static ssize_t qc_recover_auto_store(struct device *dev, struct device_attribute *attr,
+				    const char *buf, size_t size)
+{
+	int val;
+	if (kstrtol(buf, 10, &val) < 0)
+		return -EINVAL;
+	qc_recover_auto_enabled = (val != 0);
+	pr_uninode("qc_recover_auto: %s\n", qc_recover_auto_enabled ? "enabled" : "disabled");
+	if (!qc_recover_auto_enabled)
+		cancel_delayed_work_sync(&qc_recover_delayed_work);
+	else
+		schedule_delayed_work(&qc_recover_delayed_work,
+				      msecs_to_jiffies(QC_RECOVER_CHECK_INTERVAL_MS));
+	return size;
+}
+
+static ssize_t qc_recover_auto_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", qc_recover_auto_enabled);
 }
 
 static struct device_attribute unified_nodes_dattrs [] = {
@@ -1271,6 +1360,7 @@ static struct device_attribute unified_nodes_dattrs [] = {
 	__ATTR(factory_xo_therm, 	0444, factory_xo_therm_show, 	NULL),
 	__ATTR(factory_bd_therm, 	0444, factory_bd_therm_show, 	NULL),
 	__ATTR(qc_recover,		0664, qc_recover_show, 		qc_recover_store),
+	__ATTR(qc_recover_auto,	0664, qc_recover_auto_show, 	qc_recover_auto_store),
 };
 
 static struct platform_device unified_nodes_device = {
@@ -1371,6 +1461,13 @@ bool unified_nodes_create(struct device_node* devnode) {
 		goto failed;
 	}
 
+	/* Start the auto QC-recover monitor: re-checks every 30 s and
+	 * self-heals a stuck 5V/low-current QC3 session without reboot. */
+	INIT_DELAYED_WORK(&qc_recover_delayed_work, qc_recover_check_work);
+	INIT_WORK(&qc_recover_dwork, qc_recover_work);
+	schedule_delayed_work(&qc_recover_delayed_work,
+			    msecs_to_jiffies(QC_RECOVER_CHECK_INTERVAL_MS));
+
 	pr_uninode("Success to create unified nodes\n");
 	return true;
 
@@ -1382,6 +1479,10 @@ void unified_nodes_destroy(void) {
 	struct unified_nodes* uninodes;
 
 	pr_uninode("Destroying unified nodes\n");
+
+	/* Stop the auto QC-recover monitor */
+	cancel_delayed_work_sync(&qc_recover_delayed_work);
+	flush_work(&qc_recover_dwork);
 
 	if (unified_nodes_device.dev.platform_data) {
 		uninodes = unified_nodes_device.dev.platform_data;
