@@ -1647,6 +1647,7 @@ int wa_qc_recover(struct smb_charger *chg) {
 	union power_supply_propval val = { 0, };
 	int rc, usb_vnow;
 	bool was_hvdcp_enabled;
+	struct power_supply *batt_psy;
 
 	if (!chg)
 		return -EINVAL;
@@ -1677,7 +1678,8 @@ int wa_qc_recover(struct smb_charger *chg) {
 
 	/* 3. Make sure HVDCP detect (QC2/QC3) is enabled on the AP path */
 	was_hvdcp_enabled = !chg->hvdcp_disable && !chg->pd_not_supported;
-	smblib_hvdcp_detect_enable(chg, true);
+	if (was_hvdcp_enabled)
+		smblib_hvdcp_detect_enable(chg, true);
 
 	/* 4. Re-run APSD so the charger re-classifies the port.
 	 *    smblib_rerun_apsd_if_required() re-enables DPDM and re-triggers
@@ -1717,13 +1719,31 @@ int wa_qc_recover(struct smb_charger *chg) {
 	/* 8. Restore state: force back to 5V so the HW can self-negotiate.
 	 *    If the charger is not actually a QC2 brick we must not leave
 	 *    9V forced on it. */
-	smblib_dp_dm(chg, POWER_SUPPLY_DP_DM_FORCE_5V);
+	if (rc == 0 && usb_vnow >= 8000)
+		smblib_dp_dm(chg, POWER_SUPPLY_DP_DM_FORCE_5V);
 
 	if (!was_hvdcp_enabled)
 		smblib_hvdcp_detect_enable(chg, false);
 
 	/* 9. Notify psy layer so the charger icon / current reports update */
 	power_supply_changed(chg->batt_psy);
+
+	/* 10. Fix QNVO / FCC cap: the charger controller caps IBAT at 600mA
+	 *     (QNOVO_VOTER) when the PL (Power-Limiter) is disabled
+	 *     (PL_FCC_LOW_VOTER). Re-enable the PL path so fast-charge current
+	 *     (up to ~2.8A) is allowed again. Toggle fcc_stepper via the
+	 *     battery power-supply property, which re-runs the fcc election
+	 *     and releases PL_FCC_LOW_VOTER. */
+	batt_psy = power_supply_get_by_name("battery");
+	if (batt_psy) {
+		union power_supply_propval st = { 0, };
+		st.intval = 0;
+		power_supply_set_property(batt_psy, POWER_SUPPLY_PROP_FCC_STEPPER_ENABLE, &st);
+		st.intval = 1;
+		power_supply_set_property(batt_psy, POWER_SUPPLY_PROP_FCC_STEPPER_ENABLE, &st);
+		power_supply_put(batt_psy);
+		pr_wa("Toggled fcc_stepper to release FCC cap\n");
+	}
 
 	wa_qc_recover_running = false;
 	return 0;
