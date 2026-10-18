@@ -1239,7 +1239,8 @@ static void qc_recover_work(struct work_struct *work)
 
 static void qc_recover_check_work(struct work_struct *work)
 {
-	struct power_supply *usb_psy, batt_psy;
+	struct power_supply *usb_psy,
+			    *batt_psy;
 	union power_supply_propval val;
 	int vnow_mv = 0, iusb_ma = 0, real_type;
 
@@ -1311,7 +1312,7 @@ static ssize_t qc_recover_show(struct device *dev, struct device_attribute *attr
 static ssize_t qc_recover_auto_store(struct device *dev, struct device_attribute *attr,
 				    const char *buf, size_t size)
 {
-	int val;
+	long val;
 	if (kstrtol(buf, 10, &val) < 0)
 		return -EINVAL;
 	qc_recover_auto_enabled = (val != 0);
