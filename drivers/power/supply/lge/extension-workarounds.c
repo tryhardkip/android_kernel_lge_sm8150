@@ -1628,3 +1628,109 @@ void wa_update_port_forwarding(bool connected) {
 	}
 }
 EXPORT_SYMBOL(wa_update_port_forwarding);
+
+
+////////////////////////////////////////////////////////////////////////////
+// LGE Workaround : QC renegotiation recover (no-reboot fix)
+//
+// The QC2/QC3 (HVDCP3) negotiation state machine can hang at 5V
+// after a cable re-plug, leaving the phone charging at ~580 mA
+// instead of ~1.5 A. A reboot resets it. This function replays the
+// boot-time sequence: clear stuck state -> enable HVDCP detect ->
+// re-run APSD -> request 9V.
+//
+// Triggered by writing 1 to /sys/devices/platform/lge-unified-nodes/qc_recover
+
+static bool wa_qc_recover_running = false;
+
+int wa_qc_recover(struct smb_charger *chg) {
+	union power_supply_propval val = { 0, };
+	int rc, usb_vnow;
+	bool was_hvdcp_enabled;
+
+	if (!chg)
+		return -EINVAL;
+
+	if (wa_qc_recover_running) {
+		pr_wa("QC recover already in progress, skip\n");
+		return 0;
+	}
+	wa_qc_recover_running = true;
+
+	pr_wa("Starting QC renegotiation recover\n");
+
+	/* 1. Read current USB voltage for log */
+	rc = smblib_get_prop_usb_voltage_now(chg, &val);
+	if (rc < 0) {
+		pr_wa("Couldn't read USB voltage rc=%d\n", rc);
+		wa_qc_recover_running = false;
+		return rc;
+	}
+	usb_vnow = val.intval / 1000;
+	pr_wa("USB Vnow before recover: %d mV\n", usb_vnow);
+
+	/* 2. Clear all workaround / EOC / suspended-USBIN stuck flags */
+	wa_drop_vbus_on_eoc_clear();
+	wa_resuming_suspended_usbin_clear();
+	wa_rerun_apsd_for_dcp_clear();
+	wa_detect_standard_hvdcp_clear();
+
+	/* 3. Make sure HVDCP detect (QC2/QC3) is enabled on the AP path */
+	was_hvdcp_enabled = !chg->hvdcp_disable && !chg->pd_not_supported;
+	smblib_hvdcp_detect_enable(chg, true);
+
+	/* 4. Re-run APSD so the charger re-classifies the port.
+	 *    smblib_rerun_apsd_if_required() re-enables DPDM and re-triggers
+	 *    CMD_APSD_REG[0] (APSD_RERUN_BIT). */
+	rc = smblib_rerun_apsd_if_required(chg);
+	if (rc < 0) {
+		pr_wa("APSD re-run failed rc=%d\n", rc);
+		if (!was_hvdcp_enabled)
+			smblib_hvdcp_detect_enable(chg, false);
+		wa_qc_recover_running = false;
+		return rc;
+	}
+
+	/* 5. Give the charger ~4s to finish the APSD / QC2 pulse train */
+	sleep(4);
+
+	/* 6. Request 9V via the dp_dm force-9V path (same path used by
+	 *    wa_detect_standard_hvdcp_main). If the charger is a QC2/QC3
+	 *    brick this will bump VBUS to 9V. */
+	rc = smblib_dp_dm(chg, POWER_SUPPLY_DP_DM_FORCE_9V);
+	if (rc < 0)
+		pr_wa("Couldn't force 9V rc=%d\n", rc);
+
+	sleep(1);
+
+	/* 7. Read back result */
+	rc = smblib_get_prop_usb_voltage_now(chg, &val);
+	if (rc == 0) {
+		usb_vnow = val.intval / 1000;
+		if (usb_vnow >= 8000)
+			pr_wa("SUCCESS: VBUS jumped to %d mV (9V negotiated)\n", usb_vnow);
+		else
+			pr_wa("STUCK: VBUS still %d mV, retry or reboot\n", usb_vnow);
+	} else
+		pr_wa("Couldn't read USB voltage after recover rc=%d\n", rc);
+
+	/* 8. Restore state: force back to 5V so the HW can self-negotiate.
+	 *    If the charger is not actually a QC2 brick we must not leave
+	 *    9V forced on it. */
+	smblib_dp_dm(chg, POWER_SUPPLY_DP_DM_FORCE_5V);
+
+	if (!was_hvdcp_enabled)
+		smblib_hvdcp_detect_enable(chg, false);
+
+	/* 9. Notify psy layer so the charger icon / current reports update */
+	power_supply_changed(chg->batt_psy);
+
+	wa_qc_recover_running = false;
+	return 0;
+}
+EXPORT_SYMBOL(wa_qc_recover);
+
+bool wa_qc_recover_is_running(void) {
+	return wa_qc_recover_running;
+}
+EXPORT_SYMBOL(wa_qc_recover_is_running);

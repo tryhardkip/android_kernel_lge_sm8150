@@ -1202,6 +1202,44 @@ static ssize_t factory_bd_therm_show(struct device* dev, struct device_attribute
 	return snprintf(buf, PAGE_SIZE, "Result:%d Raw:ffff\n", sens_temp);
 }
 
+/* --- QC recover: force renegotiate QC2/QC3 to 9V without a reboot --- */
+
+static void qc_recover_work(struct work_struct *work)
+{
+	struct power_supply *psy = power_supply_get_by_name("battery");
+	struct smb_charger *chg;
+
+	if (!psy) {
+		pr_uninode("qc_recover: battery psy not found\n");
+		return;
+	}
+	chg = power_supply_get_drvdata(psy);
+	power_supply_put(psy);
+
+	if (IS_ERR_OR_NULL(chg)) {
+		pr_uninode("qc_recover: chg not ready\n");
+		return;
+	}
+
+	if (wa_qc_recover(chg) == 0)
+		pr_uninode("qc_recover: done\n");
+}
+static DECLARE_WORK(qc_recover_dwork, qc_recover_work);
+
+static ssize_t qc_recover_store(struct device *dev, struct device_attribute *attr,
+				    const char *buf, size_t size)
+{
+	if (kstrtol(buf, 10, NULL) == 1) {
+		pr_uninode("qc_recover triggered\n");
+		schedule_work(&qc_recover_dwork);
+	}
+	return size;
+}
+static ssize_t qc_recover_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", wa_qc_recover_is_running());
+}
+
 static struct device_attribute unified_nodes_dattrs [] = {
 	__ATTR(thermald_iusb,		0664, thermald_iusb_show,		thermald_iusb_store),
 	__ATTR(thermald_ibat,		0664, thermald_ibat_show,		thermald_ibat_store),
@@ -1232,6 +1270,7 @@ static struct device_attribute unified_nodes_dattrs [] = {
 	__ATTR(bsm_timetofull,		0664, bsm_timetofull_show,	bsm_timetofull_store),
 	__ATTR(factory_xo_therm, 	0444, factory_xo_therm_show, 	NULL),
 	__ATTR(factory_bd_therm, 	0444, factory_bd_therm_show, 	NULL),
+	__ATTR(qc_recover,		0664, qc_recover_show, 		qc_recover_store),
 };
 
 static struct platform_device unified_nodes_device = {

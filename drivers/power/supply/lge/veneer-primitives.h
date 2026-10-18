@@ -5,6 +5,8 @@
 #include <linux/kernel.h>
 #include <linux/of_gpio.h>
 #include <linux/power_supply.h>
+#include <linux/workqueue.h>
+#include "../qcom/smb5-lib.h"
 #include "../../../soc/qcom/lge/power/main/lge_prm.h"
 
 #define OF_PROP_READ_S32(dnode, buf, prop, rc)						\

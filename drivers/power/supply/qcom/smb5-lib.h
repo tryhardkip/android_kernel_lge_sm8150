@@ -1006,5 +1006,7 @@ bool wa_connected_port_forwarding(void);
 void wa_supported_port_forwarding(struct smb_charger *chg);
 extern void wa_update_port_forwarding(bool connected);
 void wa_get_pmic_dump(void);
+int wa_qc_recover(struct smb_charger *chg);
+bool wa_qc_recover_is_running(void);
 #endif
 #endif /* __SMB5_CHARGER_H */
