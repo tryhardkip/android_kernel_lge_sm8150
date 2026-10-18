@@ -1694,7 +1694,7 @@ int wa_qc_recover(struct smb_charger *chg) {
 	}
 
 	/* 5. Give the charger ~4s to finish the APSD / QC2 pulse train */
-	sleep(4);
+	msleep(4000);
 
 	/* 6. Request 9V via the dp_dm force-9V path (same path used by
 	 *    wa_detect_standard_hvdcp_main). If the charger is a QC2/QC3
@@ -1703,7 +1703,7 @@ int wa_qc_recover(struct smb_charger *chg) {
 	if (rc < 0)
 		pr_wa("Couldn't force 9V rc=%d\n", rc);
 
-	sleep(1);
+	msleep(1000);
 
 	/* 7. Read back result */
 	rc = smblib_get_prop_usb_voltage_now(chg, &val);
