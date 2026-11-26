@@ -4,6 +4,7 @@
 
 #include <linux/delay.h>
 #include <linux/atomic.h>
+#include <linux/mutex.h>
 #include <linux/ctype.h>
 #include <linux/pmic-voter.h>
 #include <linux/power_supply.h>
@@ -1643,20 +1644,22 @@ EXPORT_SYMBOL(wa_update_port_forwarding);
 // Triggered by writing 1 to /sys/devices/platform/lge-unified-nodes/qc_recover
 
 static atomic_t wa_qc_recover_running = ATOMIC_INIT(0);
+static DEFINE_MUTEX(wa_qc_recover_lock);
 
 int wa_qc_recover(struct smb_charger *chg) {
 	union power_supply_propval val = { 0, };
-	int rc, usb_vnow;
-	bool was_hvdcp_enabled;
+	int rc, usb_vnow, ret = 0;
+	bool was_hvdcp_enabled = false;
 	struct power_supply *batt_psy;
 
 	if (!chg)
 		return -EINVAL;
 
-	if (atomic_xchg(&wa_qc_recover_running, 1)) {
+	if (!mutex_trylock(&wa_qc_recover_lock)) {
 		pr_wa("QC recover already in progress, skip\n");
 		return 0;
 	}
+	atomic_set(&wa_qc_recover_running, 1);
 
 	pr_wa("Starting QC renegotiation recover\n");
 
@@ -1664,8 +1667,8 @@ int wa_qc_recover(struct smb_charger *chg) {
 	rc = smblib_get_prop_usb_voltage_now(chg, &val);
 	if (rc < 0) {
 		pr_wa("Couldn't read USB voltage rc=%d\n", rc);
-		atomic_set(&wa_qc_recover_running, 0);
-		return rc;
+		ret = rc;
+		goto out;
 	}
 	usb_vnow = val.intval / 1000;
 	pr_wa("USB Vnow before recover: %d mV\n", usb_vnow);
@@ -1689,8 +1692,8 @@ int wa_qc_recover(struct smb_charger *chg) {
 		pr_wa("APSD re-run failed rc=%d\n", rc);
 		if (!was_hvdcp_enabled)
 			smblib_hvdcp_detect_enable(chg, false);
-		atomic_set(&wa_qc_recover_running, 0);
-		return rc;
+		ret = rc;
+		goto out;
 	}
 
 	/* 5. Give the charger ~4s to finish the APSD / QC2 pulse train */
@@ -1745,8 +1748,10 @@ int wa_qc_recover(struct smb_charger *chg) {
 		pr_wa("Toggled fcc_stepper to release FCC cap\n");
 	}
 
+	out:
 	atomic_set(&wa_qc_recover_running, 0);
-	return 0;
+	mutex_unlock(&wa_qc_recover_lock);
+	return ret;
 }
 EXPORT_SYMBOL(wa_qc_recover);
 
