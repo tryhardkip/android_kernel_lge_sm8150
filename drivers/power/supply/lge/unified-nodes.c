@@ -1215,6 +1215,8 @@ struct smb_charger;
 static struct delayed_work qc_recover_delayed_work;
 static struct work_struct  qc_recover_dwork;
 static bool qc_recover_auto_enabled = true;
+static int qc_recover_retry_count = 0;
+#define QC_RECOVER_MAX_RETRIES 3
 
 static void qc_recover_work(struct work_struct *work)
 {
@@ -1282,10 +1284,18 @@ static void qc_recover_check_work(struct work_struct *work)
 	if (vnow_mv > 0 &&
 	    vnow_mv < QC_RECOVER_STUCK_THRESHOLD_MV &&
 	    iusb_ma < QC_RECOVER_MIN_CURRENT_MA) {
-		pr_uninode("qc_recover_auto: stuck (VUSB=%d mV, IBAT=%d mA), triggering recover\n",
-			    vnow_mv, iusb_ma);
-		schedule_work(&qc_recover_dwork);
+		if (qc_recover_retry_count < QC_RECOVER_MAX_RETRIES) {
+			qc_recover_retry_count++;
+			pr_uninode("qc_recover_auto: stuck (VUSB=%d mV, IBAT=%d mA), triggering recover (retry %d/%d)\n",
+				    vnow_mv, iusb_ma, qc_recover_retry_count, QC_RECOVER_MAX_RETRIES);
+			schedule_work(&qc_recover_dwork);
+		} else {
+			pr_uninode_ratelimited("qc_recover_auto: max retries (%d) reached for stuck session, skipping\n",
+					       QC_RECOVER_MAX_RETRIES);
+		}
 	} else {
+		if (vnow_mv >= QC_RECOVER_STUCK_THRESHOLD_MV || iusb_ma >= QC_RECOVER_MIN_CURRENT_MA)
+			qc_recover_retry_count = 0;
 		pr_uninode("qc_recover_auto: healthy (VUSB=%d mV, IBAT=%d mA)\n",
 			    vnow_mv, iusb_ma);
 	}
