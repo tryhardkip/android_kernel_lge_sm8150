@@ -3,6 +3,7 @@
 #define pr_dbg_wa(fmt, ...) pr_debug(fmt, ##__VA_ARGS__)
 
 #include <linux/delay.h>
+#include <linux/atomic.h>
 #include <linux/ctype.h>
 #include <linux/pmic-voter.h>
 #include <linux/power_supply.h>
@@ -1641,7 +1642,7 @@ EXPORT_SYMBOL(wa_update_port_forwarding);
 //
 // Triggered by writing 1 to /sys/devices/platform/lge-unified-nodes/qc_recover
 
-static bool wa_qc_recover_running = false;
+static atomic_t wa_qc_recover_running = ATOMIC_INIT(0);
 
 int wa_qc_recover(struct smb_charger *chg) {
 	union power_supply_propval val = { 0, };
@@ -1652,11 +1653,10 @@ int wa_qc_recover(struct smb_charger *chg) {
 	if (!chg)
 		return -EINVAL;
 
-	if (wa_qc_recover_running) {
+	if (atomic_xchg(&wa_qc_recover_running, 1)) {
 		pr_wa("QC recover already in progress, skip\n");
 		return 0;
 	}
-	wa_qc_recover_running = true;
 
 	pr_wa("Starting QC renegotiation recover\n");
 
@@ -1664,7 +1664,7 @@ int wa_qc_recover(struct smb_charger *chg) {
 	rc = smblib_get_prop_usb_voltage_now(chg, &val);
 	if (rc < 0) {
 		pr_wa("Couldn't read USB voltage rc=%d\n", rc);
-		wa_qc_recover_running = false;
+		atomic_set(&wa_qc_recover_running, 0);
 		return rc;
 	}
 	usb_vnow = val.intval / 1000;
@@ -1689,7 +1689,7 @@ int wa_qc_recover(struct smb_charger *chg) {
 		pr_wa("APSD re-run failed rc=%d\n", rc);
 		if (!was_hvdcp_enabled)
 			smblib_hvdcp_detect_enable(chg, false);
-		wa_qc_recover_running = false;
+		atomic_set(&wa_qc_recover_running, 0);
 		return rc;
 	}
 
@@ -1745,12 +1745,12 @@ int wa_qc_recover(struct smb_charger *chg) {
 		pr_wa("Toggled fcc_stepper to release FCC cap\n");
 	}
 
-	wa_qc_recover_running = false;
+	atomic_set(&wa_qc_recover_running, 0);
 	return 0;
 }
 EXPORT_SYMBOL(wa_qc_recover);
 
 bool wa_qc_recover_is_running(void) {
-	return wa_qc_recover_running;
+	return atomic_read(&wa_qc_recover_running) != 0;
 }
 EXPORT_SYMBOL(wa_qc_recover_is_running);
